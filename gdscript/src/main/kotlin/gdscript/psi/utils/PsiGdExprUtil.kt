@@ -153,11 +153,12 @@ object PsiGdExprUtil {
                             return ""
                         }
                     }
+
                     run {
                         val method = expr.expr.text
                         if (method == "get_node" || method == "get_node_or_null" || method == "get_first_node_in_group") {
                             //TODO try to parse Node from .tscn
-                            println("get_node = ${expr.expr.returnType}")
+//                            println("get_node = ${expr.expr.returnType}")
                             return expr.expr.returnType
                         } else if (method == "get_nodes_in_group") {
                             return "Array[Variant]"
@@ -268,13 +269,13 @@ object PsiGdExprUtil {
 
                         return GdKeywords.INT
                     } else if (elementType == GdTypes.STRING_VAL_NM) {
-                        return GdKeywords.STR
+                        return GdKeywords.STRING
                     } else if (elementType == GdTypes.STRING) {
-                        return GdKeywords.STR
+                        return GdKeywords.STRING
                     } else if (elementType == GdTypes.STRING_NAME) {
-                        return GdKeywords.STR_NAME
+                        return GdKeywords.STRING_NAME
                     } else if (elementType == GdTypes.NODE_PATH) {
-                        return GdKeywords.STR
+                        return GdKeywords.STRING
                     } else if (elementType == GdTypes.NODE_PATH_LIT) {
                         return GdKeywords.NODE_PATH
                     } else if (elementType == GdTypes.REF_ID_NM) {
@@ -290,8 +291,7 @@ object PsiGdExprUtil {
                         }
 
                         val named: GdRefIdRef = expr.refIdNm ?: return ""
-                        return when (val element =
-                            GdClassMemberUtil.findDeclaration(named)) {
+                        return when (val element = GdClassMemberUtil.findDeclaration(named)) {
                             is GdClassVarDeclTl -> parseLoadedType(expr, element.returnType)
                             is GdVarDeclSt -> parseLoadedType(expr, element.returnType)
                             is GdConstDeclTl -> parseLoadedType(expr, element.returnType)

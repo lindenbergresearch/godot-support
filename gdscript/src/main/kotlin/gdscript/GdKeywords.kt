@@ -34,12 +34,12 @@ object GdKeywords {
     const val INT = "int"
     const val FLOAT = "float"
     const val BOOL = "bool"
-    const val STR = "String"
+    const val STRING = "String"
     const val ARRAY = "Array"
     const val DICTIONARY = "Dictionary"
-    const val STR_NAME = "StringName"
+    const val STRING_NAME = "StringName"
     const val NODE_PATH = "NodePath"
-    val BUILT_TYPES = setOf(INT, STR, FLOAT, BOOL, ARRAY, DICTIONARY)
+    val BUILT_TYPES = setOf(INT, STRING, FLOAT, BOOL, ARRAY, DICTIONARY)
     const val VOID = "void"
     const val CALLABLE = "Callable"
 

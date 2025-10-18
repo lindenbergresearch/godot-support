@@ -20,13 +20,13 @@ object StringUtil {
         }.joinToString("")
 
         return camelRegex.replace(parsed) {
-                "_${it.value}"
-            }.lowercase(Locale.getDefault())
+            "_${it.value}"
+        }.lowercase(Locale.getDefault())
     }
 
     fun String.snakeToCamelCase(): String {
         return snakeRegex.replace(this) {
-            it.value.replace("_","")
+            it.value.replace("_", "")
                 .uppercase(Locale.getDefault())
         }.replace(" ", "")
     }
@@ -40,6 +40,10 @@ object StringUtil {
 
     fun List<String>.filterGdTscn(): Array<String> {
         return this.filter { it.endsWith(".gd") || it.endsWith(".tscn") }.toTypedArray()
+    }
+
+    fun String.toText(): String {
+        return "'" + this.replace('\n', '|').replace('\r', '|').replace('\t', ' ') + "'"
     }
 
     fun String.parseFromSquare(): String {

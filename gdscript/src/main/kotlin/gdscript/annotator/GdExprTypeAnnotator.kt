@@ -1,17 +1,17 @@
 package gdscript.annotator
 
-import com.intellij.lang.annotation.AnnotationHolder
-import com.intellij.lang.annotation.Annotator
-import com.intellij.lang.annotation.HighlightSeverity
+import com.intellij.lang.annotation.*
 import com.intellij.openapi.project.DumbService
 import com.intellij.psi.PsiElement
+import com.intellij.psi.util.elementType
 import gdscript.GdKeywords
 import gdscript.psi.*
-import gdscript.psi.utils.GdExprUtil
+import gdscript.psi.utils.*
 import gdscript.utils.GdExprUtil.left
 import gdscript.utils.GdExprUtil.right
 import gdscript.utils.GdOperand
 import gdscript.utils.StringUtil.isDynamicType
+import gdscript.utils.StringUtil.toText
 
 class GdExprTypeAnnotator : Annotator {
 
@@ -35,6 +35,12 @@ class GdExprTypeAnnotator : Annotator {
     }
 
     private fun varDeclExpr(element: GdVarDeclSt, holder: AnnotationHolder) {
+        // Skip type checking for variant types (declared with '=' and no explicit type)
+        if (isVariantDeclaration(element)) {
+            //     println("Skipping varDeclExpr type checking for variant declaration: $element / ${element.text}")
+            return
+        }
+
         val left = element.returnType
         val right = element.expr?.returnType ?: return
         val operator = element.assignTyped?.text ?: return
@@ -42,6 +48,12 @@ class GdExprTypeAnnotator : Annotator {
     }
 
     private fun classVarDecl(element: GdClassVarDeclTl, holder: AnnotationHolder) {
+        // Skip type checking for variant types (declared with '=' and no explicit type)
+        if (isVariantDeclaration(element)) {
+            //  println("Skipping classVarDecl type checking for variant declaration: $element / ${element.text.toText()}")
+            return
+        }
+
         val left = element.returnType
         val right = element.expr?.returnType ?: return
         val operator = element.assignTyped?.text ?: return
@@ -49,6 +61,32 @@ class GdExprTypeAnnotator : Annotator {
     }
 
     private fun assignExpr(element: GdAssignSt, holder: AnnotationHolder) {
+        // Check if the left side references a variable
+        val leftExpr = element.exprList.firstOrNull()
+        if (leftExpr != null) {
+            val varDecl = findVariableDeclaration(leftExpr)
+            //     println("varDecl for $leftExpr: $varDecl / '${varDecl?.text?.toText()}'")
+            if (varDecl != null) {
+                if (isVariantDeclaration(varDecl)) {
+                    //   println("IS VARIANT => varDecl for $leftExpr: $varDecl / '${varDecl.text.toText()}'")
+                    // Variable was declared as variant -> skip type checking
+                    return
+                }
+
+                // For typed variables, get the declared type and validate against it
+                val declaredType = getDeclaredType(varDecl)
+                val rightExpr = element.exprList.right()
+                val operator = element.assignSign.text
+
+                if (declaredType.isNotEmpty()) {
+                    // Validate: declared type of variable vs. type of assigned value
+                    validate(declaredType, rightExpr, operator, "Cannot assign", element, holder)
+                    return
+                }
+            }
+        }
+
+        // Fallback to original behavior if variable declaration not found
         val left = element.exprList.left()
         val right = element.exprList.right()
         val operator = element.assignSign.text
@@ -98,24 +136,131 @@ class GdExprTypeAnnotator : Annotator {
     ) {
         var l = left
         var r = right
+
+//        val ta_r = GdExprUtil.typeAccepts(r, l, element)
+//        val ta_l = GdExprUtil.typeAccepts(l, r, element)
+
+      //  println("Validate: $l $operator $r / $element / ${element.text.toText()} ${element.javaClass.simpleName} | accepts=$ta_l, $ta_r")
+
         if (l == r || r == GdKeywords.NULL) return
         if (l.isDynamicType() || r.isDynamicType()) return
         if (l == "PackedScene") return
         if (l == "EnumDictionary") l = "int"
         if (r == "EnumDictionary") r = "int"
+
         if (GdOperand.isAllowed(l, r, operator, element.project)) return
-        if (operator.contains("=") && GdExprUtil.typeAccepts(r, l, element)) return
-        if (operator.contains("=") && GdExprUtil.typeAccepts(l, r, element)) return
+
+        if (GdExprUtil.typeAccepts(r, l, element)) return
+        if (GdExprUtil.typeAccepts(l, r, element)) return
 
         holder
-            .newAnnotationGd(element.project, HighlightSeverity.ERROR, "$element -> $message $l $operator $r")
+            .newAnnotationGd(element.project, HighlightSeverity.ERROR, "$message a value of type '$r' as '$l'")
             .range(element.textRange)
             .create()
     }
 
+    /**
+     * Determines if a variable declaration is a Variant type.
+     * A variable is considered Variant if:
+     * - It has NO explicit type annotation (typed == null)
+     * - AND it uses simple '=' assignment (not ':=')
+     */
+    private fun isVariantDeclaration(declaration: PsiElement): Boolean {
+        return when (declaration) {
+            is GdVarDeclSt -> {
+                // Check if there's an explicit type annotation
+                if (declaration.typed != null) {
+                    return false
+                }
+
+                // Check if assignment uses simple '='
+                val assignTyped = declaration.assignTyped ?: return false
+                return isVariantAssignment(assignTyped)
+            }
+
+            is GdClassVarDeclTl -> {
+                // Check if there's an explicit type annotation
+                if (declaration.typed != null) {
+                    return false
+                }
+
+                // Check if assignment uses simple '='
+                val assignTyped = declaration.assignTyped ?: return false
+                return isVariantAssignment(assignTyped)
+            }
+
+            else -> false
+        }
+    }
+
+    /**
+     * Checks if the assignment uses '=' (variant) instead of ':=' (typed)
+     */
+    private fun isVariantAssignment(assignTyped: GdAssignTyped): Boolean {
+        val firstChild = assignTyped.firstChild ?: return false
+        return firstChild.elementType == GdTypes.EQ
+    }
+
+    /**
+     * Gets the declared type of variable declaration.
+     */
+    private fun getDeclaredType(declaration: PsiElement): String {
+        return when (declaration) {
+            is GdVarDeclSt -> {
+                // For explicitly typed variables
+                if (declaration.typed != null) {
+                    return PsiGdExprUtil.fromTyped(declaration.typed)
+                }
+
+                // For := assignment (inferred typed), get type from initial expression
+                val assignTyped = declaration.assignTyped
+                if (assignTyped != null && !isVariantAssignment(assignTyped)) {
+                    return declaration.expr?.returnType ?: ""
+                }
+
+                ""
+            }
+
+            is GdClassVarDeclTl -> {
+                // For explicitly typed variables
+                if (declaration.typed != null) {
+                    return PsiGdExprUtil.fromTyped(declaration.typed)
+                }
+
+                // For := assignment (inferred typed), get type from initial expression
+                val assignTyped = declaration.assignTyped
+                if (assignTyped != null && !isVariantAssignment(assignTyped)) {
+                    return declaration.expr?.returnType ?: ""
+                }
+
+                ""
+            }
+
+            else -> ""
+        }
+    }
+
+    /**
+     * Finds the declaration of a variable from an expression reference
+     */
+    private fun findVariableDeclaration(expr: GdExpr): PsiElement? {
+        // Get the identifier from the expression
+        val refId = when (expr) {
+            is GdLiteralEx -> expr.refIdNm
+            is GdAttributeEx -> expr.refId
+            else -> null
+        } ?: return null
+
+        // Resolve the reference to find the declaration
+        val decl = GdClassMemberUtil.findDeclaration(refId)
+        if (decl is PsiElement) return decl
+
+        return null
+    }
+
     private fun arrIndexExpr(element: GdArrEx, holder: AnnotationHolder) {
-        val exprs = element.exprList
-        if (exprs.getOrNull(1) == null) {
+        val expressionList = element.exprList
+        if (expressionList.getOrNull(1) == null) {
             // Highlight both brackets and everything between them
             val lBracket = element.node.findChildByType(GdTypes.LSBR)?.psi
             val rBracket = element.node.findChildByType(GdTypes.RSBR)?.psi
@@ -130,8 +275,8 @@ class GdExprTypeAnnotator : Annotator {
             return
         }
 
-        val baseType = exprs.getOrNull(0)?.returnType ?: return
-        val indexType = exprs.getOrNull(1)?.returnType ?: return
+        val baseType = expressionList.getOrNull(0)?.returnType ?: return
+        val indexType = expressionList.getOrNull(1)?.returnType ?: return
 
         // Skip if dynamic/unresolved
         if (baseType.isDynamicType() || indexType.isDynamicType()) return
@@ -153,8 +298,7 @@ class GdExprTypeAnnotator : Annotator {
 
         holder
             .newAnnotationGd(element.project, HighlightSeverity.ERROR, "Invalid index type $indexType, expected $exp")
-            .range(exprs.getOrNull(1)?.textRange ?: element.textRange)
+            .range(expressionList.getOrNull(1)?.textRange ?: element.textRange)
             .create()
     }
 }
-

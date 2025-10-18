@@ -1,21 +1,15 @@
 package gdscript.annotator
 
-import com.intellij.lang.annotation.AnnotationHolder
-import com.intellij.lang.annotation.Annotator
-import com.intellij.lang.annotation.HighlightSeverity
+import com.intellij.lang.annotation.*
 import com.intellij.openapi.project.DumbService
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
-import com.intellij.psi.util.PsiTreeUtil
-import com.intellij.psi.util.childrenOfType
-import com.intellij.psi.util.elementType
-import com.intellij.psi.util.nextLeaf
+import com.intellij.psi.util.*
 import gdscript.GdKeywords
 import gdscript.highlighter.GdHighlighterColors
 import gdscript.psi.*
 import gdscript.psi.impl.*
 import gdscript.psi.utils.GdClassMemberUtil
-import gdscript.psi.utils.GdClassUtil
 import gdscript.reference.GdClassMemberReference
 import gdscript.settings.GdProjectSettingsState
 import gdscript.settings.GdProjectState
@@ -48,7 +42,7 @@ class GdRefIdAnnotator : Annotator {
             return
         }
 
-        // Enum type declaration
+        // Signal type declaration
         if (element is GdSignalIdNmiImpl) {
             holder
                 .newSilentAnnotation(HighlightSeverity.INFORMATION)
@@ -58,7 +52,7 @@ class GdRefIdAnnotator : Annotator {
             return
         }
 
-        // Enum type declaration
+        // Var type declaration
         if (element is GdVarNmiImpl && element.parent is GdParamImpl) {
             holder
                 .newSilentAnnotation(HighlightSeverity.INFORMATION)
@@ -68,7 +62,7 @@ class GdRefIdAnnotator : Annotator {
             return
         }
 
-        // Enum type declaration
+        // Enum Decl type declaration
         if (element is GdEnumDeclNmiImpl) {
             holder
                 .newSilentAnnotation(HighlightSeverity.INFORMATION)
@@ -84,6 +78,16 @@ class GdRefIdAnnotator : Annotator {
                 .newSilentAnnotation(HighlightSeverity.INFORMATION)
                 .range(element.textRange)
                 .textAttributes(GdHighlighterColors.ENUM_VALUE)
+                .create()
+            return
+        }
+
+        // Setter parameter value declaration
+        if (element is GdVarNmiImpl && element.parent is GdSetDeclImpl) {
+            holder
+                .newSilentAnnotation(HighlightSeverity.INFORMATION)
+                .range(element.textRange)
+                .textAttributes(GdHighlighterColors.PARAMETER)
                 .create()
             return
         }
@@ -108,7 +112,7 @@ class GdRefIdAnnotator : Annotator {
 
         var attribute = GdHighlighterColors.METHOD_CALL
         val reference = element.references.firstOrNull()
-      //  val calledUponExpr = GdClassMemberUtil.calledUpon(element)
+        //  val calledUponExpr = GdClassMemberUtil.calledUpon(element)
 
 //        if (calledUponExpr != null) {
 //            println("Element: '${element.text}' called upon: '${calledUponExpr.text}' type: '${calledUponExpr.returnType}'")
@@ -213,7 +217,7 @@ class GdRefIdAnnotator : Annotator {
                         "Reference [${element.text}] not found"
                     ).range(element.textRange).create()
 
-                //    println("Annotating: ${element}(${element.text}) range=${element.textRange} file=${reference.resolveDeclaration()} as ${element.javaClass.typeName} with state '$state'")
+                    //    println("Annotating: ${element}(${element.text}) range=${element.textRange} file=${reference.resolveDeclaration()} as ${element.javaClass.typeName} with state '$state'")
 
                     return
                 }

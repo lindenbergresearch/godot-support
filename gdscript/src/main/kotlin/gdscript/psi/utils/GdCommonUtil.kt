@@ -2,6 +2,7 @@ package gdscript.psi.utils
 
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiNamedElement
+import com.intellij.psi.util.PsiTreeUtil
 import gdscript.GdKeywords
 import gdscript.psi.*
 import gdscript.utils.GdOperand
@@ -53,6 +54,7 @@ object GdCommonUtil {
                 is GdVarNmi -> GdElementFactory.varNmi(project, newName)
                 else -> return element
             }
+
             element.node.replaceChild(keyNode, id.node)
         }
 
@@ -73,38 +75,56 @@ object GdCommonUtil {
             is GdTypedVal -> element.returnType
             is GdClassNaming -> element.classname
             is GdClassDeclTl -> element.classNameNmi?.classId.orEmpty()
-            is GdEnumDeclTl -> {
-                // Return a qualified enum name instead of generic "EnumDictionary"
-                // This allows enum values to be resolved for xxx.enum.VALUE patterns
-                val enumName = element.name
-                if (enumName.isNotEmpty()) {
-                    val owningClass = GdClassUtil.getFullClassId(element).trim('"')  // ← Remove quotes!
-                    "$owningClass.$enumName"
-                } else {
-                    // For unnamed enums, we can't reference them by name
-                    "EnumDictionary"
-                }
-            }
-
+            is GdEnumDeclTl -> handleEnumDecl(element)
             is GdEnumValue -> GdKeywords.INT
             is GdSignalDeclTl -> "Signal"
-            is GdForSt -> {
-                if (element.typed != null) {
-                    return element.typed?.text?.trim(':', ' ') ?: ""
-                }
-
-                val forExpr = element.expr?.returnType ?: ""
-                if (forExpr.startsWith("Array")) {
-                    return GdOperand.getReturnType(forExpr, GdKeywords.INT, "[]", element.project)
-                } else {
-                    return forExpr
-                }
-            }
-
+            is GdSetDecl -> handleSetDecl(element)
+            is GdForSt -> handleForStmt(element)
             null -> return ""
             else -> throw NotImplementedError(element.toString())
         }
     }
+
+
+    private fun handleSetDecl(element: GdSetDecl): String {
+        // First, try to get the type from the typed annotation in the setter itself
+        element.typed?.text?.trim(':', ' ')?.let { type ->
+            if (type.isNotEmpty()) return type
+        }
+
+        // Otherwise, try to get the type from the parent class variable declaration
+        val parentVar = PsiTreeUtil.getParentOfType(element, GdClassVarDeclTl::class.java)
+        return parentVar?.returnType ?: throw RuntimeException("Unable to resolve getter/setter type: '${element.text}'")
+    }
+
+
+    private fun handleEnumDecl(element: GdEnumDeclTl): String {
+        // Return a qualified enum name instead of generic "EnumDictionary"
+        // This allows enum values to be resolved for xxx.enum.VALUE patterns
+        val enumName = element.name
+        if (enumName.isNotEmpty()) {
+            val owningClass = GdClassUtil.getFullClassId(element).trim('"')  // ← Remove quotes!
+            return "$owningClass.$enumName"
+        } else {
+            // For unnamed enums, we can't reference them by name
+            return "EnumDictionary"
+        }
+    }
+
+
+    private fun handleForStmt(element: GdForSt): String {
+        if (element.typed != null) {
+            return element.typed?.text?.trim(':', ' ') ?: ""
+        }
+
+        val forExpr = element.expr?.returnType ?: ""
+        if (forExpr.startsWith("Array")) {
+            return GdOperand.getReturnType(forExpr, GdKeywords.INT, "[]", element.project)
+        } else {
+            return forExpr
+        }
+    }
+
 
     fun typed(element: PsiElement?): GdTyped? {
         return when (element) {
