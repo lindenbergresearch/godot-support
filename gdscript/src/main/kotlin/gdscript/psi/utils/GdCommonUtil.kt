@@ -33,12 +33,14 @@ object GdCommonUtil {
     fun setName(element: PsiNamedElement, newName: String): PsiElement {
         val project = element.project
         val keyNode = element.node.firstChildNode
+
         if (keyNode != null) {
-            val id = when(element) {
+            val id = when (element) {
                 is GdClassNameNmi -> {
                     GdCfgUtil.renameValue(project, element.name, newName)
                     GdElementFactory.classNameNmi(project, newName)
                 }
+
                 is GdEnumDeclNmi -> GdElementFactory.enumDeclNmi(project, newName)
                 is GdEnumValueNmi -> GdElementFactory.enumValueNmi(project, newName)
                 is GdFuncDeclIdNmi -> GdElementFactory.funcDeclIdNmi(project, newName)
@@ -58,7 +60,7 @@ object GdCommonUtil {
     }
 
     fun returnType(element: PsiElement?): String {
-        return when(element) {
+        return when (element) {
             is GdConstDeclTl -> element.returnType
             is GdClassVarDeclTl -> element.returnType
             is GdMethodDeclTl -> element.returnType
@@ -71,7 +73,19 @@ object GdCommonUtil {
             is GdTypedVal -> element.returnType
             is GdClassNaming -> element.classname
             is GdClassDeclTl -> element.classNameNmi?.classId.orEmpty()
-            is GdEnumDeclTl -> "EnumDictionary"
+            is GdEnumDeclTl -> {
+                // Return a qualified enum name instead of generic "EnumDictionary"
+                // This allows enum values to be resolved for xxx.enum.VALUE patterns
+                val enumName = element.name
+                if (enumName.isNotEmpty()) {
+                    val owningClass = GdClassUtil.getFullClassId(element).trim('"')  // ← Remove quotes!
+                    "$owningClass.$enumName"
+                } else {
+                    // For unnamed enums, we can't reference them by name
+                    "EnumDictionary"
+                }
+            }
+
             is GdEnumValue -> GdKeywords.INT
             is GdSignalDeclTl -> "Signal"
             is GdForSt -> {
@@ -86,13 +100,14 @@ object GdCommonUtil {
                     return forExpr
                 }
             }
+
             null -> return ""
             else -> throw NotImplementedError(element.toString())
         }
     }
 
     fun typed(element: PsiElement?): GdTyped? {
-        return when(element) {
+        return when (element) {
             is GdConstDeclTl -> element.typed
             is GdClassVarDeclTl -> element.typed
             is GdSetDecl -> element.typed
