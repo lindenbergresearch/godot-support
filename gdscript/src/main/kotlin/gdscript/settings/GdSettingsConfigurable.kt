@@ -38,7 +38,7 @@ class GdSettingsConfigurable(val project: Project) : Configurable {
         val settings = GdProjectSettingsState.getInstance(project).state
         settings.hidePrivate = component?.hidePrivate ?: true
         settings.shortTyped = component?.shortTyped ?: false
-        settings.annotators = component?.annotators ?: GdProjectState.OFF
+        settings.annotators = component?.annotators ?: GdProjectState.DISABLE
         settings.criticals = component?.criticals ?: "ALERT,ATTENTION,CAUTION,CRITICAL,DANGER,SECURITY"
         settings.warnings = component?.warnings ?: "BUG,DEPRECATED,FIXME,HACK,TASK,TBD,TODO,WARNING"
         settings.notes = component?.notes ?: "INFO,NOTE,NOTICE,TEST,TESTING"

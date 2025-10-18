@@ -3,6 +3,7 @@ package gdscript.annotator
 import com.intellij.lang.annotation.AnnotationHolder
 import com.intellij.lang.annotation.Annotator
 import com.intellij.lang.annotation.HighlightSeverity
+import com.intellij.openapi.project.DumbService
 import com.intellij.psi.PsiElement
 import com.intellij.psi.util.PsiTreeUtil
 import gdscript.psi.*
@@ -15,6 +16,11 @@ import gdscript.psi.utils.GdClassMemberUtil
 class GdConstVarIdAnnotator : Annotator {
 
     override fun annotate(element: PsiElement, holder: AnnotationHolder) {
+        // Skip annotation if indices are not ready
+        if (DumbService.isDumb(element.project)) {
+            return
+        }
+
         if (element is GdVarNmi) {
             when (element.parent) {
                 is GdParam -> return

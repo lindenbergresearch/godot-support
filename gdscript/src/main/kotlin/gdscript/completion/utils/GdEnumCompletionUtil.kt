@@ -39,10 +39,8 @@ object GdEnumCompletionUtil {
     }
 
     fun GdEnumDeclTl.lookup(): LookupElement? {
-        if (name.isBlank()) return null
-
         return GdLookup.create(
-            name,
+            name.ifBlank { "<anonymous enum>" },
             icon = GdScriptPluginIcons.GDScriptIcons.ENUM_MARKER,
             typed = GdKeywords.INT,
             priority = GdLookup.LOCAL_USER_DEFINED,

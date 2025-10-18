@@ -4,11 +4,10 @@ import com.intellij.lang.annotation.HighlightSeverity
 import com.intellij.util.xmlb.annotations.Tag
 
 class GdProjectState {
-
     companion object {
-        val OFF = "off"
+        val DISABLE = "disable"
         val WARN = "warn"
-        val ERR = "err"
+        val ERROR = "error"
 
         fun selectedLevel(state: String): HighlightSeverity {
             return when (state) {
@@ -25,7 +24,7 @@ class GdProjectState {
     var shortTyped = false
 
     @Tag("annotators")
-    var annotators: String = OFF
+    var annotators: String = DISABLE
 
     @Tag("criticals")
     var criticals: String = "ALERT,ATTENTION,CAUTION,CRITICAL,DANGER,SECURITY"

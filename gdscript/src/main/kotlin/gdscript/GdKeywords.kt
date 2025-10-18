@@ -1,7 +1,6 @@
 package gdscript
 
 object GdKeywords {
-
     const val EXTENDS = "extends"
     const val CLASS = "class"
     const val SIGNAL = "signal"
@@ -59,10 +58,10 @@ object GdKeywords {
     val LITERAL_TYPES = arrayOf(BOOL, BOOL, NULL)
 
     /** Annotations */
-    val ANNOTATION_TOOL = "tool"
-    val ANNOTATION_EXPORT = "export"
-    val ANNOTATION_ONREADY = "onready"
-    val ANNOTATION_ICON = "icon"
+    const val ANNOTATION_TOOL = "tool"
+    const val ANNOTATION_EXPORT = "export"
+    const val ANNOTATION_ONREADY = "onready"
+    const val ANNOTATION_ICON = "icon"
 
     // TODO delete - use?
     val ANNOTATIONS_ROOT_ONLY = arrayOf(

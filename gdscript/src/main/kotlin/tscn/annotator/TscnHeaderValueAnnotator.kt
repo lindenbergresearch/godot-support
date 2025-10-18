@@ -4,6 +4,7 @@ import com.intellij.lang.annotation.AnnotationHolder
 import com.intellij.lang.annotation.Annotator
 import com.intellij.lang.annotation.HighlightSeverity
 import com.intellij.openapi.editor.colors.TextAttributesKey
+import com.intellij.openapi.project.DumbService
 import com.intellij.psi.PsiElement
 import tscn.highlighter.TscnHighlighterColors
 import tscn.psi.TscnHeaderValueNm
@@ -12,6 +13,11 @@ import tscn.psi.TscnHeaderValueVal
 class TscnHeaderValueAnnotator : Annotator {
 
     override fun annotate(element: PsiElement, holder: AnnotationHolder) {
+        // Skip annotation if indices are not ready
+        if (DumbService.isDumb(element.project)) {
+            return
+        }
+
         if (element !is TscnHeaderValueVal) return
 
         val colorAttribute = determineAttributeValueColor(element)

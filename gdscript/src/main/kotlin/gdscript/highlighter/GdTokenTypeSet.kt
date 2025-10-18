@@ -45,6 +45,8 @@ interface GdTokenTypeSet {
             GdTypes.SET,
             GdTypes.ANDAND,
             GdTypes.OROR,
+            GdTypes.PASS,
+            GdTypes.VOID,
         )
 
         val VOID = TokenSet.create(GdTypes.VOID)
@@ -60,6 +62,44 @@ interface GdTokenTypeSet {
             GdTypes.BREAK,
             GdTypes.RETURN,
             GdTypes.PASS
+        )
+
+        val OPERATOR = TokenSet.create(
+            GdTypes.MUL,
+            GdTypes.POWER,
+            GdTypes.DIV,
+            GdTypes.MOD,
+            GdTypes.PLUS,
+            GdTypes.MINUS,
+            GdTypes.PPLUS,
+            GdTypes.MMINUS,
+            GdTypes.DOT,
+            GdTypes.COMMA,
+            GdTypes.CEQ,
+            GdTypes.COLON,
+            GdTypes.SEMICON,
+            GdTypes.NEGATE,
+            GdTypes.NEGATE,
+            GdTypes.EQ,
+            GdTypes.RET,
+            GdTypes.RBSHIFT,
+            GdTypes.LBSHIFT,
+            GdTypes.LBSHIFT,
+            GdTypes.LRBR,
+            GdTypes.RRBR,
+            GdTypes.LSBR,
+            GdTypes.RSBR,
+            GdTypes.LCBR,
+            GdTypes.RCBR,
+            GdTypes.AND,
+            GdTypes.ANDAND,
+            GdTypes.ANDAND,
+            GdTypes.OR,
+            GdTypes.OROR,
+            GdTypes.OROR,
+            GdTypes.XOR,
+            GdTypes.NOT,
+            GdTypes.UNDER,
         )
 
         // Yellow

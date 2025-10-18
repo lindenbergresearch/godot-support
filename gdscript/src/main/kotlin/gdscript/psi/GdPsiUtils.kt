@@ -58,7 +58,7 @@ object GdPsiUtils {
 
     /** Local variable */
     @JvmStatic fun getName(element: GdVarDeclSt): String = GdVarDeclStUtil.getName(element)
-    @JvmStatic fun getReturnType(element: GdVarDeclSt): String = PsiGdLocalVarUtil.getReturnType(element)
+   // @JvmStatic fun getReturnType(element: GdVarDeclSt): String = PsiGdLocalVarUtil.getReturnType(element)
 
     /** Local constant */
     @JvmStatic fun getName(element: GdConstDeclSt): String = GdConstDeclUtil.getName(element)
@@ -85,10 +85,28 @@ object GdPsiUtils {
     @JvmStatic fun getType(element: GdFlowSt): String = GdStmtUtil.getType(element)
 
     /** Expressions */
-    @JvmStatic fun getReturnType(element: GdExpr): String = PsiGdExprUtil.getReturnType(element)
+   // @JvmStatic fun getReturnType(element: GdExpr): String = PsiGdExprUtil.getReturnType(element)
     @JvmStatic fun getReturnTypeOrRes(element: GdExpr, allowResource: Boolean = false): String = PsiGdExprUtil.getReturnType(element, allowResource)
     @JvmStatic fun getReturnType(element: GdArgExpr): String = PsiGdExprUtil.getReturnType(element.expr)
+    @JvmStatic
+    fun getReturnType(element: GdExpr): String {
+        return try {
+            PsiGdExprUtil.getReturnType(element)
+        } catch (e: StackOverflowError) {
+            // Fallback in case cycle detection fails
+            ""
+        }
+    }
 
+    // For variable declarations
+    @JvmStatic
+    fun getReturnType(element: GdVarDeclSt): String {
+        return try {
+            PsiGdLocalVarUtil.getReturnType(element)
+        } catch (e: StackOverflowError) {
+            ""
+        }
+    }
     /** Lambdas */
     @JvmStatic fun getInvokedReturnType(element: GdFuncDeclEx): String = PsiGdLocalFuncUtil.getReturnType(element)
     // TODO remove?

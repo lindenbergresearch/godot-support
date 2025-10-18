@@ -3,6 +3,7 @@ package gdscript.annotator
 import com.intellij.lang.annotation.AnnotationHolder
 import com.intellij.lang.annotation.Annotator
 import com.intellij.lang.annotation.HighlightSeverity
+import com.intellij.openapi.project.DumbService
 import com.intellij.psi.PsiElement
 import gdscript.GdKeywords
 import gdscript.psi.*
@@ -15,6 +16,11 @@ import gdscript.utils.StringUtil.isDynamicType
 class GdExprTypeAnnotator : Annotator {
 
     override fun annotate(element: PsiElement, holder: AnnotationHolder) {
+        // Skip annotation if indices are not ready
+        if (DumbService.isDumb(element.project)) {
+            return
+        }
+
         when (element) {
             is GdFactorEx -> factorExpr(element, holder)
             is GdPlusEx -> plusExpr(element, holder)
@@ -102,7 +108,7 @@ class GdExprTypeAnnotator : Annotator {
         if (operator.contains("=") && GdExprUtil.typeAccepts(l, r, element)) return
 
         holder
-            .newAnnotationGd(element.project, HighlightSeverity.ERROR, "$message $l $operator $r")
+            .newAnnotationGd(element.project, HighlightSeverity.ERROR, "$element -> $message $l $operator $r")
             .range(element.textRange)
             .create()
     }

@@ -1,8 +1,6 @@
 package gdscript.completion
 
-import com.intellij.codeInsight.completion.CompletionContributor
-import com.intellij.codeInsight.completion.CompletionParameters
-import com.intellij.codeInsight.completion.CompletionResultSet
+import com.intellij.codeInsight.completion.*
 import com.intellij.patterns.PlatformPatterns.psiElement
 import com.intellij.psi.PsiErrorElement
 import com.intellij.psi.util.PsiTreeUtil
@@ -11,10 +9,8 @@ import gdscript.completion.utils.GdClassVarCompletionUtil
 import gdscript.completion.utils.GdMethodCompletionUtil.lookupDeclaration
 import gdscript.psi.GdFile
 import gdscript.psi.GdTypes
-import gdscript.psi.utils.GdClassMemberUtil
+import gdscript.psi.utils.*
 import gdscript.psi.utils.GdClassMemberUtil.methods
-import gdscript.psi.utils.GdNodeUtil
-import gdscript.psi.utils.PsiGdFileUtil
 import gdscript.utils.CompletionParametersUtil.indent
 import gdscript.utils.StringUtil.snakeToPascalCase
 
@@ -23,21 +19,6 @@ import gdscript.utils.StringUtil.snakeToPascalCase
  * keywords, functions (+ overrides), annotations, $NodePaths
  */
 class GdRootContributor : CompletionContributor() {
-
-    companion object {
-        val ROOT_POSITION = psiElement(GdTypes.IDENTIFIER)
-            .withParents(
-                PsiErrorElement::class.java,
-                GdFile::class.java,
-            )
-
-        val INNER_CLASS_POSITION = psiElement(GdTypes.IDENTIFIER)
-            .withParents(
-                GdFile::class.java,
-            )
-
-        val ANNOTATOR_DECL = psiElement(GdTypes.ANNOTATOR)
-    }
 
     override fun fillCompletionVariants(parameters: CompletionParameters, result: CompletionResultSet) {
         val position = parameters.position
@@ -50,7 +31,7 @@ class GdRootContributor : CompletionContributor() {
             addTopLvlDecl(parameters, result)
         } else if (INNER_CLASS_POSITION.accepts(position)) {
             // Inner class
-//            addTopLvlDecl(parameters, result)
+            // addTopLvlDecl(parameters, result)
         } else if (ANNOTATOR_DECL.accepts(position)) {
             // After "@"
             GdClassVarCompletionUtil.annotations(result, position.project, false)
@@ -72,3 +53,16 @@ class GdRootContributor : CompletionContributor() {
     }
 
 }
+
+val ROOT_POSITION = psiElement(GdTypes.IDENTIFIER)
+    .withParents(
+        PsiErrorElement::class.java,
+        GdFile::class.java,
+    )
+
+val INNER_CLASS_POSITION = psiElement(GdTypes.IDENTIFIER)
+    .withParents(
+        GdFile::class.java,
+    )
+
+val ANNOTATOR_DECL = psiElement(GdTypes.ANNOTATOR)

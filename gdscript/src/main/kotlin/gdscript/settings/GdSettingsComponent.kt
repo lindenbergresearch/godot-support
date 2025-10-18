@@ -19,10 +19,10 @@ class GdSettingsComponent(val project: Project) {
     private val notesTf: JTextField = JTextField()
 
     init {
-        annotatorsCb.addItem(GdProjectState.OFF)
+        annotatorsCb.addItem(GdProjectState.DISABLE)
         annotatorsCb.addItem(GdProjectState.WARN)
-        annotatorsCb.addItem(GdProjectState.ERR)
-        annotatorsCb.selectedItem = GdProjectState.OFF
+        annotatorsCb.addItem(GdProjectState.ERROR)
+        annotatorsCb.selectedItem = GdProjectState.DISABLE
 
         panel = FormBuilder.createFormBuilder()
                 .addComponent(hidePrivateCheck, 1)

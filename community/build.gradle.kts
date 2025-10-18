@@ -25,7 +25,7 @@ repositories {
 
 dependencies {
     intellijPlatform {
-        intellijIdea(libs.versions.ideaSdk) { useInstaller = false }
+        intellijIdeaCommunity("2025.1") { useInstaller = false }
         // rider(libs.versions.riderSdk, useInstaller = false)
         jetbrainsRuntime()
     }
@@ -37,7 +37,7 @@ intellijPlatform{
 
     pluginConfiguration{
         ideaVersion {
-            sinceBuild = "252"
+            sinceBuild = "250"
         }
     }
 }

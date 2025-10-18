@@ -16,7 +16,6 @@ import gdscript.index.impl.GdClassNamingIndex
 import gdscript.psi.*
 import gdscript.psi.utils.GdClassMemberUtil
 import gdscript.psi.utils.GdClassUtil
-import gdscript.settings.GdProjectSettingsState
 import gdscript.utils.PsiElementUtil.psi
 
 /**
@@ -59,11 +58,11 @@ class GdClassMemberReference : PsiReferenceBase<GdRefIdRef>, HighlightedReferenc
 
     /**
      * Resolves the declaration associated with the given element in the context of the project.
-     * Utilizes caching through the ResolveCache mechanism to enhance performance.
+     * Uses caching through the ResolveCache mechanism to enhance performance.
      * The resolution process includes determining the relevant class, analyzing the owning class
      * of the target, and validating access permissions for class members.
      *
-     * @return a PsiElement representing the resolved declaration if found, or null otherwise
+     * @return a PsiElement representing the resolved declaration if found, or null otherwise.
      */
     fun resolveDeclaration(): PsiElement? {
         val cache = ResolveCache.getInstance(element.project)
@@ -91,6 +90,8 @@ class GdClassMemberReference : PsiReferenceBase<GdRefIdRef>, HighlightedReferenc
                     }
                     return current != null && i == parts.size
                 }
+
+
                 val targetClassDecl = qualifierExpr?.let {
                     val type = it.getReturnType()
                     if (type.isNotEmpty()) {
@@ -132,12 +133,12 @@ class GdClassMemberReference : PsiReferenceBase<GdRefIdRef>, HighlightedReferenc
                     }
                 }
 
-                // If qualifier points to a class (directly or via class-typed variable) but target class couldn't be inferred,
+                // If a qualifier points to a class (directly or via class-typed variable) but the target class couldn't be inferred,
                 // do NOT block resolution here; we'll enforce static/instance rules after resolving the candidate.
 
                 val resolved = GdClassMemberUtil.findDeclaration(element)?.psi()
 
-                // If statically accessed, disallow resolving non-static members even if target class couldn't be inferred
+                // If statically accessed, disallow resolving non-static members even if the target class couldn't be inferred
                 if (isStaticAccess == true) {
                     when (resolved) {
                         is GdMethodDeclTl -> if (!resolved.isStatic) return@Resolver null
@@ -204,57 +205,18 @@ class GdClassMemberReference : PsiReferenceBase<GdRefIdRef>, HighlightedReferenc
     }
 
     override fun getVariants(): Array<LookupElement> {
-        val isCallable = this.completionIntoCallableParam()
+        val declarations = GdClassMemberUtil.listDeclarations(element)
 
-        // If there's a qualifier, compute the target class and collect only its direct members.
-        val qualifierExpr = GdClassMemberUtil.calledUpon(element)
-        var targetClassDecl: PsiElement? = qualifierExpr?.let {
-            val type = it.getReturnType()
-            if (type.isNotEmpty()) {
-                val target = GdClassUtil.getClassIdElement(type, element, element.project)
-                if (target != null) GdClassUtil.getOwningClassElement(target) else null
-            } else null
-        }
-        // Fallback: if qualifier is a class chain like A1.B1, try to interpret it as a class id
-        if (targetClassDecl == null && qualifierExpr != null) {
-            val chain = qualifierExpr.text
-            val t = GdClassUtil.getClassIdElement(chain, element, element.project)
-            if (t != null) targetClassDecl = GdClassUtil.getOwningClassElement(t)
-        }
-        // Determine static vs instance access for completion context
-        var isStaticAccess: Boolean? = null
-        if (qualifierExpr is GdCallEx) {
-            isStaticAccess = false
-        } else if (qualifierExpr != null) {
-            val leftRef = PsiTreeUtil.getChildrenOfType(qualifierExpr, GdRefIdRef::class.java)?.firstOrNull()
-            val decl = leftRef?.let { GdClassMemberUtil.findDeclaration(it)?.psi() }
-            isStaticAccess = inferStaticAccessFromDecl(decl)
-            if (isStaticAccess == null && (targetClassDecl != null || qualifierQualifiesAsClass(qualifierExpr))) {
-                // If we could resolve a class from the qualifier chain, assume static access
-                isStaticAccess = true
-            }
+//        declarations.forEach { decl ->
+//            println("DEBUG: Declaration type=${decl.javaClass.simpleName}, value=$decl")
+//        }
+
+        val lookups = declarations.flatMap {
+            val result = GdCompletionUtil.lookups(it, completionIntoCallableParam())
+            result.toList()
         }
 
-        val members = if (targetClassDecl != null) {
-            GdClassMemberUtil.listClassMemberDeclarations(targetClassDecl, isStaticAccess)
-        } else {
-            GdClassMemberUtil.listClassMemberDeclarations(element)
-        }
-
-        val hidePrivate = GdProjectSettingsState.getInstance(element).state.hidePrivate
-            && qualifierExpr != null
-
-        val baseLookups = members.flatMap {
-            GdCompletionUtil.lookups(it, isCallable).mapNotNull { lookup ->
-                if (!hidePrivate || !lookup.lookupString.startsWith("_")) lookup
-                else null
-            }
-        }
-
-        return baseLookups.toTypedArray() + arrayOf(
-            addMethod("new"),
-            addMethod("instance"),
-        )
+        return lookups.toTypedArray()
     }
 
     private fun completionIntoCallableParam(): Boolean {

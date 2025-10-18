@@ -114,7 +114,7 @@
     <annotator language="GdScript" implementationClass="gdscript.annotator.GdExprTypeAnnotator" />
     <annotator language="GdScript" implementationClass="gdscript.annotator.GdCommentAnnotator" />
     <annotator language="GdScript" implementationClass="gdscript.annotator.GdFlowStmtAnnotator" />
-
+    <annotator language="GdScript" implementationClass="gdscript.annotator.GdEnumValueAnnotator"/>
     <annotator language="Tscn" implementationClass="tscn.annotator.TscnHeaderValueAnnotator" />
 
     <!-- Inspectors -->
@@ -200,7 +200,7 @@
     <!-- Formatters -->
     <lang.braceMatcher language="GdScript" implementationClass="gdscript.formatter.GdBraceMatcher" />
     <!-- Keep the full formatter disabled to avoid structural changes until related bugs are resolved. -->
-    <!-- <lang.formatter language="GdScript" implementationClass="gdscript.formatter.GdFormattingModelBuilder" />-->
+     <lang.formatter language="GdScript" implementationClass="gdscript.formatter.GdFormattingModelBuilder" />
     <codeStyleSettingsProvider implementation="gdscript.formatter.GdCodeStyleSettingsProvider" />
     <langCodeStyleSettingsProvider implementation="gdscript.formatter.settings.GdLanguageCodeStyleSettingsProvider" />
 

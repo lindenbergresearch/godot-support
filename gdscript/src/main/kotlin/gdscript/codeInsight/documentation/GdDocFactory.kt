@@ -2,9 +2,7 @@ package gdscript.codeInsight.documentation
 
 import com.intellij.lang.documentation.DocumentationMarkup
 import com.intellij.openapi.util.text.HtmlChunk
-import com.intellij.psi.PsiDirectory
-import com.intellij.psi.PsiElement
-import com.intellij.psi.PsiFile
+import com.intellij.psi.*
 import com.intellij.psi.util.PsiTreeUtil
 import com.jetbrains.rider.godot.community.gdscript.GdFileType
 import gdscript.codeInsight.GdDocumentationProvider
@@ -29,25 +27,26 @@ object GdDocFactory {
 
     fun create(element: Any?, fullDoc: Boolean = false): String? {
         return when (element) {
-            is GdVarNmi -> variable(element, fullDoc)
+            is GdVarNmi,
+                 -> variable(element, fullDoc)
 
             is GdMethodIdNmi,
             is GdFuncDeclIdNmi,
-            -> method(element as PsiElement, fullDoc)
+                 -> method(element as PsiElement, fullDoc)
 
             is GdEnumDeclNmi,
             is GdEnumValueNmi,
-            -> enum(element as PsiElement, fullDoc)
+                 -> enum(element as PsiElement, fullDoc)
 
             is GdClassNameNmi,
             is PsiFile,
-            -> classOrFile(element as PsiElement, fullDoc)
+                 -> classOrFile(element as PsiElement, fullDoc)
 
             is GdSignalIdNmi,
-            -> signal(element, fullDoc)
+                 -> signal(element, fullDoc)
 
             is PsiDirectory,
-            -> directory(element, fullDoc)
+                 -> directory(element, fullDoc)
 
             else -> null
         }
@@ -62,8 +61,8 @@ object GdDocFactory {
         var code = annotationPreview(declaration as PsiElement)
         code += when (declaration) {
             is GdMethodDeclTl -> declaration.methodHeader(true)
-            is GdFuncDeclEx -> declaration.methodHeader(true)
-            else -> return ""
+            is GdFuncDeclEx   -> declaration.methodHeader(true)
+            else              -> return ""
         }
 
         builder.withPreview(code)
@@ -87,7 +86,7 @@ object GdDocFactory {
 
         val annotations = annotationPreview(element.parent)
         when (val owner = element.parent) {
-            is GdConstDeclTl -> {
+            is GdConstDeclTl    -> {
                 builder.withOwner(element)
                 builder.withPreview("${annotations}const ${element.name}${withType(owner)}")
             }
@@ -97,15 +96,15 @@ object GdDocFactory {
                 builder.withPreview("${annotations}var ${element.name}${withType(owner)}")
             }
 
-            is GdVarDeclSt -> builder.withPreview("${annotations}var ${element.name}${withType(owner)}")
-            is GdConstDeclSt -> builder.withPreview("${annotations}const ${element.name}${withType(owner)}")
+            is GdVarDeclSt      -> builder.withPreview("${annotations}var ${element.name}${withType(owner)}")
+            is GdConstDeclSt    -> builder.withPreview("${annotations}const ${element.name}${withType(owner)}")
             is GdSetDecl,
             is GdParam,
-            -> builder.withPreview("${annotations}var ${element.name}${withType(owner)}")
+                                -> builder.withPreview("${annotations}var ${element.name}${withType(owner)}")
 
-            is GdForSt -> builder.withPreview("${annotations}var ${element.name}${withType(owner)}")
+            is GdForSt          -> builder.withPreview("${annotations}var ${element.name}${withType(owner)}")
             is GdBindingPattern -> builder.withPreview("${annotations}var ${element.name}")
-            else -> return null
+            else                -> return null
         }
 
         if (fullDoc) {
@@ -134,12 +133,14 @@ object GdDocFactory {
         if (declaration is GdDocumented) {
             if (fullDoc) {
                 builder.addBodyBlock(GdDocUtil.paragraph(declaration.description()))
-                builder.addBodyBlock(GdDocUtil.listTable(
-                    "tutorials",
-                    declaration.tutorials().map {
-                      HtmlChunk.link(it.url, it.name.removeSurrounding("(", ")"))
-                    },
-                ))
+                builder.addBodyBlock(
+                    GdDocUtil.listTable(
+                        "tutorials",
+                        declaration.tutorials().map {
+                            HtmlChunk.link(it.url, it.name.removeSurrounding("(", ")"))
+                        },
+                    )
+                )
                 appendProperties(builder, GdClassUtil.getOwningClassElement(element))
             } else {
                 builder.addBodyBlock(GdDocUtil.paragraph(declaration.brief()))
@@ -160,10 +161,10 @@ object GdDocFactory {
         element.files.forEach {
             val name = it.name
             when (it.fileType) {
-                is GdFileType -> scripts.add(GdDocUtil.elementLink(it.virtualFile.resourcePath(), name))
-                is TscnFileType -> scenes.add(HtmlChunk.text(name))
+                is GdFileType      -> scripts.add(GdDocUtil.elementLink(it.virtualFile.resourcePath(), name))
+                is TscnFileType    -> scenes.add(HtmlChunk.text(name))
                 is ProjectFileType -> {}
-                else -> {
+                else               -> {
                     if (GdFileResInputFilter.validResource(name)) {
                         others.add(HtmlChunk.text(name))
                     }

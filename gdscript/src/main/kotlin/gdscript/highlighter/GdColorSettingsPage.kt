@@ -2,9 +2,7 @@ package gdscript.highlighter
 
 import com.intellij.openapi.editor.colors.TextAttributesKey
 import com.intellij.openapi.fileTypes.SyntaxHighlighter
-import com.intellij.openapi.options.colors.AttributesDescriptor
-import com.intellij.openapi.options.colors.ColorDescriptor
-import com.intellij.openapi.options.colors.ColorSettingsPage
+import com.intellij.openapi.options.colors.*
 import com.intellij.rider.plugins.godot.community.icons.RiderPluginsGodotCommunityIcons
 import javax.swing.Icon
 
@@ -82,33 +80,59 @@ class Something:
     override fun getDisplayName(): String {
         return "GdScript"
     }
-
-    companion object {
-        private val DESCRIPTORS = arrayOf(
-            AttributesDescriptor("Keywords", GdHighlighterColors.KEYWORD),
-            AttributesDescriptor("Method declaration", GdHighlighterColors.METHOD_DECLARATION),
-            AttributesDescriptor("Method call", GdHighlighterColors.METHOD_CALL),
-            AttributesDescriptor("Static method call", GdHighlighterColors.STATIC_METHOD_CALL),
-            AttributesDescriptor("Flow control", GdHighlighterColors.FLOW_KEYWORDS),
-            AttributesDescriptor("Comments", GdHighlighterColors.COMMENT),
-            AttributesDescriptor("Doc comments", GdHighlighterColors.DOC_COMMENT),
-            AttributesDescriptor("Critical comments", GdHighlighterColors.DANGER),
-            AttributesDescriptor("Warning comments", GdHighlighterColors.WARNING),
-            AttributesDescriptor("Note comments", GdHighlighterColors.NOTE),
-            AttributesDescriptor("Strings", GdHighlighterColors.STRING),
-            AttributesDescriptor("Annotations", GdHighlighterColors.ANNOTATION),
-            AttributesDescriptor("Node path", GdHighlighterColors.NODE_STRING_PATH),
-            AttributesDescriptor("Node reference", GdHighlighterColors.NODE_PATH),
-            AttributesDescriptor("BaseType (Vector3, Node3D)", GdHighlighterColors.BASE_TYPE),
-            AttributesDescriptor("EngineType (Vector3, Node3D)", GdHighlighterColors.ENGINE_TYPE),
-            AttributesDescriptor("User type (class_name)", GdHighlighterColors.CLASS_TYPE),
-            AttributesDescriptor("Numbers", GdHighlighterColors.NUMBER),
-            AttributesDescriptor("Global function", GdHighlighterColors.GLOBAL_FUNCTION),
-            AttributesDescriptor("String names (&\"name\")", GdHighlighterColors.STRING_NAME),
-            AttributesDescriptor("String format marks (\"%s\")", GdHighlighterColors.STRING_FORMAT),
-            AttributesDescriptor("Variable reference", GdHighlighterColors.MEMBER),
-            AttributesDescriptor("Variable reference", GdHighlighterColors.MEMBER),
-            AttributesDescriptor("Errors", GdHighlighterColors.BAD_CHARACTER),
-        )
-    }
 }
+
+private val DESCRIPTORS = arrayOf(
+    // Keywords and Control Flow
+    AttributesDescriptor("Keywords//Keyword", GdHighlighterColors.KEYWORD),
+    AttributesDescriptor("Keywords//Flow control", GdHighlighterColors.FLOW_KEYWORDS),
+
+    // Methods
+    AttributesDescriptor("Methods//Method declaration", GdHighlighterColors.METHOD_DECLARATION),
+    AttributesDescriptor("Methods//Method call", GdHighlighterColors.METHOD_CALL),
+    AttributesDescriptor("Methods//Special method", GdHighlighterColors.SPECIAL_METHOD),
+    AttributesDescriptor("Methods//Static method call", GdHighlighterColors.STATIC_METHOD_CALL),
+    AttributesDescriptor("Methods//Global function", GdHighlighterColors.GLOBAL_FUNCTION),
+    AttributesDescriptor("Methods//Method parameter", GdHighlighterColors.PARAMETER),
+
+    // Types
+    AttributesDescriptor("Types//BaseType (Vector3, Node3D, int, float ...)", GdHighlighterColors.BASE_TYPE),
+    AttributesDescriptor("Types//EngineType (Vector3, Node3D)", GdHighlighterColors.ENGINE_TYPE),
+    AttributesDescriptor("Types//User type (class_name)", GdHighlighterColors.CLASS_TYPE),
+
+    // Enums
+    AttributesDescriptor("Types//Enum//Enum type", GdHighlighterColors.ENUM_TYPE),
+    AttributesDescriptor("Types//Enum//Enum value", GdHighlighterColors.ENUM_VALUE),
+
+    // Signals
+    AttributesDescriptor("Types//Signal", GdHighlighterColors.SIGNAL),
+
+    // Variables
+    AttributesDescriptor("Variable//Local variable", GdHighlighterColors.LOCAL_VARIABLE),
+    AttributesDescriptor("Variable//Variable reference", GdHighlighterColors.MEMBER),
+    AttributesDescriptor("Variable//Constant", GdHighlighterColors.CONSTANT),
+    AttributesDescriptor("Variable//Math constant (TAU, PI, NAN ...)", GdHighlighterColors.MATH_CONSTANT),
+
+    // Comments
+    AttributesDescriptor("Comment//Comment", GdHighlighterColors.COMMENT),
+    AttributesDescriptor("Comment//Doc comment", GdHighlighterColors.DOC_COMMENT),
+    AttributesDescriptor("Comment//Critical comment", GdHighlighterColors.DANGER),
+    AttributesDescriptor("Comment//Warning comment", GdHighlighterColors.WARNING),
+    AttributesDescriptor("Comment//Note comment", GdHighlighterColors.NOTE),
+
+    // Strings
+    AttributesDescriptor("String//String", GdHighlighterColors.STRING),
+    AttributesDescriptor("String//String name (&\"name\")", GdHighlighterColors.STRING_NAME),
+    AttributesDescriptor("String//String format mark (\"%s\")", GdHighlighterColors.STRING_FORMAT),
+
+    // Node Paths
+    AttributesDescriptor("Node Path//Node path", GdHighlighterColors.NODE_STRING_PATH),
+    AttributesDescriptor("Node Path//Node reference", GdHighlighterColors.NODE_PATH),
+
+    // Other
+    AttributesDescriptor("Other//Resource notation", GdHighlighterColors.RESOURCE_NOTATION),
+    AttributesDescriptor("Other//Operator", GdHighlighterColors.OPERATOR),
+    AttributesDescriptor("Other//Annotation", GdHighlighterColors.ANNOTATION),
+    AttributesDescriptor("Other//Number", GdHighlighterColors.NUMBER),
+    AttributesDescriptor("Other//Error", GdHighlighterColors.BAD_CHARACTER),
+)

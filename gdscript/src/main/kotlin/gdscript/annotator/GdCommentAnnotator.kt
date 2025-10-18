@@ -4,6 +4,7 @@ import com.intellij.lang.annotation.AnnotationHolder
 import com.intellij.lang.annotation.Annotator
 import com.intellij.lang.annotation.HighlightSeverity
 import com.intellij.openapi.editor.colors.TextAttributesKey
+import com.intellij.openapi.project.DumbService
 import com.intellij.psi.PsiComment
 import com.intellij.psi.PsiElement
 import com.intellij.util.text.findTextRange
@@ -13,6 +14,11 @@ import gdscript.settings.GdProjectSettingsState
 class GdCommentAnnotator : Annotator {
 
     override fun annotate(element: PsiElement, holder: AnnotationHolder) {
+        // Skip annotation if indices are not ready
+        if (DumbService.isDumb(element.project)) {
+            return
+        }
+
         if (element !is PsiComment) return
 
         if (element.text.startsWith("##")) {

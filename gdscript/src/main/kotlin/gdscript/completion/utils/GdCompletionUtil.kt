@@ -1,9 +1,11 @@
 package gdscript.completion.utils
 
+import GdScriptPluginIcons
 import com.intellij.codeInsight.lookup.LookupElement
 import gdscript.GdIcon
 import gdscript.completion.GdLookup
 import gdscript.completion.utils.GdClassCompletionUtil.lookup
+import gdscript.completion.utils.GdEnumCompletionUtil.lookup
 import gdscript.psi.*
 import gdscript.psi.utils.PsiGdExprUtil
 import gdscript.utils.StringUtil.parseFromSquare
@@ -30,23 +32,23 @@ object GdCompletionUtil {
 
     fun lookups(element: Any, isCallable: Boolean = false): Array<LookupElement> {
         return when (element) {
-            is GdClassDeclTl -> arrayOf(element.lookup())
-            is GdClassNaming -> arrayOf(lookup(element))
+            is GdClassDeclTl    -> arrayOf(element.lookup())
+            is GdClassNaming    -> arrayOf(lookup(element))
             is GdClassVarDeclTl -> arrayOf(lookup(element))
-            is GdVarDeclSt -> arrayOf(lookup(element))
-            is GdConstDeclTl -> arrayOf(lookup(element))
-            is GdConstDeclSt -> arrayOf(lookup(element))
-            is GdEnumDeclTl -> lookup(element)
-            is GdEnumValue -> arrayOf(GdEnumCompletionUtil.lookup(element))
-            is GdMethodDeclTl -> arrayOf(lookup(element, isCallable))
-            is GdForSt -> arrayOf(lookup(element))
-            is GdParam -> arrayOf(lookup(element))
-            is GdSetDecl -> arrayOf(lookup(element))
+            is GdVarDeclSt      -> arrayOf(lookup(element))
+            is GdConstDeclTl    -> arrayOf(lookup(element))
+            is GdConstDeclSt    -> arrayOf(lookup(element))
+            is GdEnumDeclTl     -> lookup(element)
+            is GdEnumValue      -> arrayOf(lookup(element))
+            is GdMethodDeclTl   -> arrayOf(lookup(element, isCallable))
+            is GdForSt          -> arrayOf(lookup(element))
+            is GdParam          -> arrayOf(lookup(element))
+            is GdSetDecl        -> arrayOf(lookup(element))
             is GdBindingPattern -> arrayOf(lookup(element))
-            is GdSignalDeclTl -> arrayOf(lookup(element))
-            is GdVarNmi -> arrayOf(lookup(element))
-            is GdAutoload -> arrayOf(lookup(element))
-            else -> emptyArray()
+            is GdSignalDeclTl   -> arrayOf(lookup(element))
+            is GdVarNmi         -> arrayOf(lookup(element))
+            is GdAutoload       -> arrayOf(lookup(element))
+            else                -> emptyArray()
         }
     }
 
@@ -92,14 +94,10 @@ object GdCompletionUtil {
     fun lookup(enum: GdEnumDeclTl): Array<LookupElement> {
         val name = enum.enumDeclNmi
 
-        return if (name != null) {
-            arrayOf(GdEnumCompletionUtil.lookup(
-                name.name,
-            ))
+        return if (name != null && name.name.isNotBlank()) {
+            arrayOf(lookup(name.name))
         } else {
-            enum.values.map {
-                GdEnumCompletionUtil.lookup(it.key, it.value)
-            }.toTypedArray()
+            enum.enumValueList.map { lookup(it) }.toTypedArray()
         }
     }
 

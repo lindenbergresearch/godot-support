@@ -1,8 +1,6 @@
 package gdscript.completion
 
-import com.intellij.codeInsight.completion.CompletionContributor
-import com.intellij.codeInsight.completion.CompletionParameters
-import com.intellij.codeInsight.completion.CompletionResultSet
+import com.intellij.codeInsight.completion.*
 import com.intellij.codeInsight.completion.impl.CamelHumpMatcher
 import com.intellij.patterns.PlatformPatterns.psiElement
 import gdscript.completion.utils.GdRefIdCompletionUtil
@@ -23,10 +21,12 @@ class GdResourceCompletionContributor : CompletionContributor() {
     val STRING = psiElement(GdTypes.STRING)
 
     override fun fillCompletionVariants(parameters: CompletionParameters, result: CompletionResultSet) {
-        val r = result.withPrefixMatcher(CamelHumpMatcher(
-            parameters.position.text.substring(0, parameters.offset - parameters.position.textRange.startOffset),
-            true,
-        ))
+        val r = result.withPrefixMatcher(
+            CamelHumpMatcher(
+                parameters.position.text.substring(0, parameters.offset - parameters.position.textRange.startOffset),
+                true,
+            )
+        )
 
         val position = parameters.position
         if (GdRefIdCompletionUtil.DIRECT_REF.accepts(position)) {

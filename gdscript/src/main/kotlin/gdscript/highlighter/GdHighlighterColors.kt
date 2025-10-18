@@ -26,14 +26,50 @@ interface GdHighlighterColors {
             "GD_METHOD_CALL", DefaultLanguageHighlighterColors.INSTANCE_METHOD
         )
 
+        val SPECIAL_METHOD = TextAttributesKey.createTextAttributesKey(
+            "GD_SPECIAL_METHOD", DefaultLanguageHighlighterColors.INSTANCE_METHOD
+        )
+
+        val PARAMETER = TextAttributesKey.createTextAttributesKey(
+            "GD_PARAMETER", DefaultLanguageHighlighterColors.PARAMETER
+        )
+
         // Blue
         val STATIC_METHOD_CALL = TextAttributesKey.createTextAttributesKey(
-            "GD_STATIC_METHOD_CALL", DefaultLanguageHighlighterColors.INSTANCE_METHOD
+            "GD_STATIC_METHOD_CALL", DefaultLanguageHighlighterColors.STATIC_METHOD
         )
 
         // Teal
         val CLASS_TYPE = TextAttributesKey.createTextAttributesKey(
-            "GD_CLASS_TYPE", DefaultLanguageHighlighterColors.KEYWORD
+            "GD_CLASS_TYPE", DefaultLanguageHighlighterColors.CLASS_REFERENCE
+        )
+
+        val ENUM_TYPE = TextAttributesKey.createTextAttributesKey(
+            "GD_ENUM_TYPE", DefaultLanguageHighlighterColors.CLASS_REFERENCE
+        )
+
+        val ENUM_VALUE = TextAttributesKey.createTextAttributesKey(
+            "GD_ENUM_VALUE", DefaultLanguageHighlighterColors.CONSTANT
+        )
+
+        // L
+        val SIGNAL = TextAttributesKey.createTextAttributesKey(
+            "GD_SIGNAL", DefaultLanguageHighlighterColors.PREDEFINED_SYMBOL
+        )
+
+        // Local Variable
+        val LOCAL_VARIABLE = TextAttributesKey.createTextAttributesKey(
+            "LOCAL_VARIABLE", DefaultLanguageHighlighterColors.LOCAL_VARIABLE
+        )
+
+        // Constant
+        val CONSTANT = TextAttributesKey.createTextAttributesKey(
+            "GD_CONSTANT", DefaultLanguageHighlighterColors.CONSTANT
+        )
+
+        // Math Constant
+        val MATH_CONSTANT = TextAttributesKey.createTextAttributesKey(
+            "GD_MATH_CONSTANT", DefaultLanguageHighlighterColors.CONSTANT
         )
 
         // Teal
@@ -43,12 +79,12 @@ interface GdHighlighterColors {
 
         // Teal
         val ENGINE_TYPE = TextAttributesKey.createTextAttributesKey(
-            "GD_ENGINE_TYPE", DefaultLanguageHighlighterColors.CONSTANT
+            "GD_ENGINE_TYPE", DefaultLanguageHighlighterColors.KEYWORD
         )
 
-        // Teal
+        // Base Type
         val BASE_TYPE = TextAttributesKey.createTextAttributesKey(
-            "GD_BASE_TYPE", DefaultLanguageHighlighterColors.CONSTANT
+            "GD_BASE_TYPE", DefaultLanguageHighlighterColors.KEYWORD
         )
 
         // Teal
@@ -59,6 +95,11 @@ interface GdHighlighterColors {
         // Grey
         val COMMENT = TextAttributesKey.createTextAttributesKey(
             "GD_COMMENT", DefaultLanguageHighlighterColors.LINE_COMMENT
+        )
+
+        // Grey
+        val OPERATOR = TextAttributesKey.createTextAttributesKey(
+            "GD_OPERATOR", DefaultLanguageHighlighterColors.BRACES
         )
 
         // Soft translucent blue
@@ -73,12 +114,17 @@ interface GdHighlighterColors {
 
         // Blue-ish
         val STRING_FORMAT = TextAttributesKey.createTextAttributesKey(
-            "GD_STRING_FORMAT", DefaultLanguageHighlighterColors.STRING
+            "GD_STRING_FORMAT", DefaultLanguageHighlighterColors.VALID_STRING_ESCAPE
+        )
+
+        // Blue-ish
+        val RESOURCE_NOTATION = TextAttributesKey.createTextAttributesKey(
+            "GD_RESOURCE_NOTATION", DefaultLanguageHighlighterColors.VALID_STRING_ESCAPE
         )
 
         // Red
         val ANNOTATION = TextAttributesKey.createTextAttributesKey(
-            "GD_ANNOTATION", DefaultLanguageHighlighterColors.DOC_COMMENT_MARKUP
+            "GD_ANNOTATION", DefaultLanguageHighlighterColors.METADATA
         )
 
         // Green
@@ -98,7 +144,7 @@ interface GdHighlighterColors {
 
         // Purple
         val GLOBAL_FUNCTION = TextAttributesKey.createTextAttributesKey(
-            "GD_GLOBAL_FUNCTION", DefaultLanguageHighlighterColors.CONSTANT
+            "GD_GLOBAL_FUNCTION", DefaultLanguageHighlighterColors.FUNCTION_CALL
         )
 
         val NOTE = TextAttributesKey.createTextAttributesKey(

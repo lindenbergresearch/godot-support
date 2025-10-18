@@ -3,6 +3,7 @@ package gdscript.annotator
 import com.intellij.lang.annotation.AnnotationHolder
 import com.intellij.lang.annotation.Annotator
 import com.intellij.lang.annotation.HighlightSeverity
+import com.intellij.openapi.project.DumbService
 import com.intellij.psi.PsiElement
 import com.intellij.psi.util.PsiTreeUtil
 import gdscript.action.quickFix.GdAddMatchBranchesFix
@@ -18,6 +19,11 @@ import gdscript.utils.PsiReferenceUtil.resolveRef
 class GdMatchStmtAnnotator : Annotator {
 
     override fun annotate(element: PsiElement, holder: AnnotationHolder) {
+        // Skip annotation if indices are not ready
+        if (DumbService.isDumb(element.project)) {
+            return
+        }
+
         if (element !is GdExpr || element.parent !is GdMatchSt) return
 
         val id = PsiTreeUtil.getDeepestLast(element).parent
