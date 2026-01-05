@@ -11,7 +11,6 @@ import com.intellij.ui.ScrollPaneFactory
 import com.intellij.ui.components.JBTabbedPane
 import com.intellij.ui.treeStructure.Tree
 import com.intellij.util.concurrency.AppExecutorUtil
-import java.util.concurrent.Callable
 import com.jetbrains.rider.godot.community.gdscript.GdFileType
 import gdscript.index.impl.GdFileResIndex
 import gdscript.psi.utils.GdClassUtil
@@ -21,12 +20,22 @@ import tscn.psi.TscnFile
 import tscn.psi.TscnNodeHeader
 import tscn.psi.search.TscnResourceSearcher
 import tscn.toolWindow.TscnSceneCellRenderer
+import java.awt.datatransfer.StringSelection
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
-import java.awt.datatransfer.StringSelection
+import java.util.concurrent.Callable
 import javax.swing.JComponent
 import javax.swing.TransferHandler
 
+/**
+ * A class responsible for building a tree structure representation of TSCN scenes in the given project.
+ *
+ * This class collects and processes scene files, builds visual trees for these files, and allows for
+ * interactions with their tree components.
+ *
+ * @constructor Initializes the builder with the given project.
+ * @property project The project in which the scene files are managed.
+ */
 class TscnSceneTreeBuilder {
 
     val project: Project
@@ -55,6 +64,7 @@ class TscnSceneTreeBuilder {
         return when (file.fileType) {
             is TscnFileType -> arrayOf(file.getPsiFile(project)).filterNotNull()
             is GdFileType -> TscnResourceSearcher(project).listReference(file).mapNotNull { it.file }
+
             else -> {
                 // can't reference CSharpFileType here
                 if (file.extension.equals("cs", ignoreCase = true)) {
@@ -65,10 +75,10 @@ class TscnSceneTreeBuilder {
     }
 
     private fun buildTree(file: PsiFile): Pair<String, JComponent> {
-        return Pair(file.name, buildTreeStructure(file, ""))
+        return Pair(file.name, buildTreeStructure(file))
     }
 
-    private fun buildTreeStructure(file: PsiFile, basePath: String): JComponent {
+    private fun buildTreeStructure(file: PsiFile, basePath: String = ""): JComponent {
         val nodes = PsiTreeUtil.collectElementsOfType(file, TscnNodeHeader::class.java)
         val treeModel = TscnSceneTreeNode(basePath)
 
@@ -132,8 +142,8 @@ class TscnSceneTreeBuilder {
         val instance = node.instanceResource
         if (instance.isBlank()) return null
 
-        GdClassUtil.getClassIdElement(instance, project)?.let {
-            if (it is TscnFile) PsiTreeUtil.findChildOfType(it, TscnNodeHeader::class.java)?.let {
+        GdClassUtil.getClassIdElement(instance, project)?.let { psiElement ->
+            if (psiElement is TscnFile) PsiTreeUtil.findChildOfType(psiElement, TscnNodeHeader::class.java)?.let {
                 return it.type.ifEmpty { resolveType(it) } ?: ""
             }
         }
@@ -154,6 +164,7 @@ class TscnSceneTreeBuilder {
             }
 
             "unique" -> {}
+
             "visible" -> {}
         }
     }
