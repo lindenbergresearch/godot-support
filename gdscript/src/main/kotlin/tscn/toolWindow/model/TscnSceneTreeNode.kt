@@ -4,6 +4,10 @@ import gdscript.psi.utils.GdNodeUtil.relativeOrUniquePath
 import tscn.psi.TscnNodeHeader
 import javax.swing.tree.DefaultMutableTreeNode
 
+/**
+ * Represents a node within a TSCN scene tree, extending functionality from `DefaultMutableTreeNode`.
+ * This class maintains attributes and behavior relevant to nodes in a TSCN structured hierarchy.
+ */
 class TscnSceneTreeNode : DefaultMutableTreeNode {
 
     var myName = ""
@@ -25,7 +29,7 @@ class TscnSceneTreeNode : DefaultMutableTreeNode {
         node: TscnNodeHeader,
         basePath: String,
         externalType: String? = null,
-        inherited: Boolean = false
+        inherited: Boolean = false,
     ) {
         myName = node.name
         myType = externalType ?: node.type
