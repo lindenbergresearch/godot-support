@@ -10,35 +10,56 @@ import gdscript.highlighter.GdHighlighterColors
 import gdscript.psi.*
 import gdscript.psi.impl.*
 import gdscript.psi.utils.GdClassMemberUtil
+import gdscript.psi.utils.GdClassUtil
 import gdscript.reference.GdClassMemberReference
 import gdscript.settings.GdProjectSettingsState
 import gdscript.settings.GdProjectState
 import gdscript.utils.PsiElementUtil.getCallExpr
 import gdscript.utils.PsiFileUtil.isInSdk
 
+
 /**
- * Colors references
- * Checks for existence
+ * GdRefIdAnnotator is responsible for annotating PSI elements within Godot script files.
+ * It applies various text attribute keys to elements based on their semantic meaning in the code.
+ * The annotations provide visual feedback in the IntelliJ IDE to enhance code readability and help the developer understand the context and type of the elements.
  */
 class GdRefIdAnnotator : Annotator {
+    /**
+     * A private set representing the continuation symbols used for object references.
+     *
+     * This set includes specific symbols (e.g., `LRBR`, `LSBR`, and `DOT` from `GdTypes`)
+     * that denote the continuation points in object-related expressions. Used internally
+     * to aid in annotation purposes within the context of the `GdRefIdAnnotator` class.
+     */
     private val objectContinuation = setOf(GdTypes.LRBR, GdTypes.LSBR, GdTypes.DOT)
+    /**
+     * A set containing types that are considered tolerant for unresolved references.
+     * These types do not trigger specific unresolved reference annotations
+     * and are treated as exceptions during the annotation process.
+     */
     private val unresolvedTolerantTypes =
         setOf(
             GdKeywords.VARIANT,
             "Node",
             "Resource",
-            "null"
+            GdKeywords.NULL
         )
 
+    /**
+     * Annotates the given PSI element with appropriate syntax highlighting or error annotations based on its type,
+     * context, and resolved references within the codebase.
+     *
+     * @param element The PSI element to be analyzed and annotated.
+     * @param holder The annotation holder used to register annotations for the given element.
+     */
     override fun annotate(element: PsiElement, holder: AnnotationHolder) {
         // Skip annotation if indices are not ready
         if (DumbService.isDumb(element.project)) {
             return
         }
 
-        val state = GdProjectSettingsState.getInstance(element).state.annotators
 
-        if (element !is GdRefIdRef && element !is GdVarNmiImpl && element !is GdNamedIdElement) {
+        if (element !is GdRefIdRef && element !is GdVarNmiImpl && element !is GdNamedIdElement && element !is GdClassNameNmi) {
             return
         }
 
@@ -92,9 +113,10 @@ class GdRefIdAnnotator : Annotator {
             return
         }
 
-        val txt = element.text
+        val txt = element.text.trim()
 
         // ignore self and super keywords
+        //TODO: add coloring for them
         if (txt == GdKeywords.SELF || txt == GdKeywords.SUPER) {
             return
         }
@@ -112,46 +134,37 @@ class GdRefIdAnnotator : Annotator {
 
         var attribute = GdHighlighterColors.METHOD_CALL
         val reference = element.references.firstOrNull()
-        //  val calledUponExpr = GdClassMemberUtil.calledUpon(element)
-
-//        if (calledUponExpr != null) {
-//            println("Element: '${element.text}' called upon: '${calledUponExpr.text}' type: '${calledUponExpr.returnType}'")
-//        }
 
         // check if there is at least one reference
         if (reference?.isSoft == false && reference is GdClassMemberReference) {
-            // println("'${txt}' class=${element.javaClass.typeName} -> resolved='${reference.resolveDeclaration()}' psi_elem='${element}' attribute='${attribute.externalName}'")
+            val resolved = reference.resolveDeclaration()
 
-            attribute = when (val resolved = reference.resolveDeclaration()) {
+            attribute = when (resolved) {
                 is GdMethodDeclTl -> {
                     if (resolved.containingFile.name.endsWith("GlobalScope.gd")) GdHighlighterColors.GLOBAL_FUNCTION
                     else if (resolved.isStatic) GdHighlighterColors.STATIC_METHOD_CALL
-                    else if (txt.startsWith('_')) GdHighlighterColors.SPECIAL_METHOD
+                    else if (txt.startsWith(GdKeywords.SPECIAL_NAME_PREFIX)) GdHighlighterColors.SPECIAL_METHOD
+                    else if (txt == GdKeywords.PRELOAD) GdHighlighterColors.KEYWORD
                     else GdHighlighterColors.METHOD_CALL
                 }
 
                 is GdVarDeclStImpl -> {
-                    //       //println("+++ MATCHED LOCAL VAR => ${txt} ${resolved}");
                     GdHighlighterColors.LOCAL_VARIABLE
                 }
 
                 is GdConstDeclTlImpl -> {
-                    //     //println("+++ MATCHED CONST => ${txt} ${resolved}");
                     GdHighlighterColors.CONSTANT
                 }
 
                 is GdParamImpl -> {
-//                         //println("+++ MATCHED PARAMETER => ${txt} ${resolved}");
                     GdHighlighterColors.PARAMETER
                 }
 
                 is GdEnumDeclTlImpl, is GdEnumDeclTl, is GdEnumDeclNmiImpl -> {
-                    //       println("enum: ${element.elementType} text: '${element.text}'")
-                    GdHighlighterColors.CLASS_TYPE
+                    GdHighlighterColors.ENUM_TYPE
                 }
 
-                is GdEnumValueImpl -> {
-                    //     println("enum VAL: ${element.elementType} member: '${element.text}'")
+                is GdEnumValueImpl, is GdEnumValueNmiImpl -> {
                     GdHighlighterColors.ENUM_VALUE
                 }
 
@@ -186,20 +199,41 @@ class GdRefIdAnnotator : Annotator {
                     }
 
                     val calledUponExpr = GdClassMemberUtil.calledUpon(element)
-                    // For undefined types do not mark it as error
+                    // For undefined types do not mark it as an error
                     if (calledUponExpr != null) {
-                        // If qualifier is a node path, skip error
+                        // If qualifier is a node path, skip the error
                         if (PsiTreeUtil.findChildOfType(calledUponExpr, GdNodePath::class.java) != null)
                             return@run GdHighlighterColors.MEMBER
 
-                        // If qualifier resolves to a named enum, allow enum member access only for existing enum values
+                        // If a qualifier resolves to a named enum, allow enum member access only for existing enum values
                         run {
                             val decl = GdClassMemberUtil.findDeclaration(calledUponExpr)
+
+                            // Check if it's a direct enum declaration
                             if (decl is GdEnumDeclTl) {
-                                val name = element.text
+                                val name = element.text.trim()
                                 val isMember = decl.enumValueList.any { it.enumValueNmi.name == name }
-                                if (isMember) return@run GdHighlighterColors.MEMBER
+                                if (isMember) return@run GdHighlighterColors.ENUM_VALUE
                                 // otherwise, fall through to unresolved reference error
+                            }
+
+                            // Check if it's a class with anonymous enums
+                            if (decl is GdClassDeclTl || decl is GdClassNaming) {
+                                val classElement = if (decl is GdClassNaming) {
+                                    GdClassUtil.getOwningClassElement(decl)
+                                } else {
+                                    decl
+                                }
+
+                                if (classElement is GdClassDeclTl) {
+                                    val name = element.text
+                                    val allEnums = classElement.childrenOfType<GdEnumDeclTl>()
+                                    for (enumDecl in allEnums) {
+                                        val isMember = enumDecl.enumValueList.any { it.enumValueNmi.name == name }
+
+                                        if (isMember) return@run GdHighlighterColors.ENUM_VALUE
+                                    }
+                                }
                             }
                         }
 
@@ -211,18 +245,23 @@ class GdRefIdAnnotator : Annotator {
                     if (element.getCallExpr() != null && GdClassMemberUtil.hasMethodCheck(element))
                         return@run GdHighlighterColors.METHOD_CALL
 
+                    val state = GdProjectSettingsState.getInstance(element).state.annotators
+
                     holder.newAnnotationGd(
                         element.project,
                         GdProjectState.selectedLevel(state),
-                        "Reference [${element.text}] not found"
+                        "Reference: [${element.text}] not found. $element ${element.elementType} ${element.javaClass.typeName}"
                     ).range(element.textRange).create()
-
-                    //    println("Annotating: ${element}(${element.text}) range=${element.textRange} file=${reference.resolveDeclaration()} as ${element.javaClass.typeName} with state '$state'")
 
                     return
                 }
 
-                else -> GdHighlighterColors.MEMBER
+                else ->
+                    if (resolved.containingFile.name.endsWith("GlobalScope.gd")) {
+                        GdHighlighterColors.GLOBAL_FUNCTION
+                    } else {
+                        GdHighlighterColors.MEMBER
+                    }
             }
         }
 
@@ -231,28 +270,18 @@ class GdRefIdAnnotator : Annotator {
         }
 
         if (element is GdVarNmiImpl) {
-            //println("+++ MATCHED VAR => ${txt} parent=${element.parent} ${element.javaClass.typeName} ${attribute.externalName}")
-
             if (element.parent is GdConstDeclTlImpl) {
-                //println("+++ MATCHED CONST => ${txt} ${element.javaClass.typeName} ${attribute.externalName}")
                 attribute = GdHighlighterColors.CONSTANT
             }
+
             if (element.parent is GdClassVarDeclTlImpl) {
-                //println("+++ MATCHED CLASS VAR => ${txt} ${element.javaClass.typeName} ${attribute.externalName}")
                 attribute = GdHighlighterColors.MEMBER
             }
 
-
             if (element.parent is GdVarDeclStImpl) {
-                //println("+++ MATCHED LOCAL VAR => ${txt} ${element.javaClass.typeName} ${attribute.externalName}")
                 attribute = GdHighlighterColors.LOCAL_VARIABLE
             }
         }
-
-
-//        if (reference is GdClassMemberReference) {
-//            //println("${txt} -> resolved='${reference.resolveDeclaration()}' psi_elem='${element}' attribute='${attribute.externalName}'")
-//        }
 
         holder
             .newSilentAnnotation(HighlightSeverity.INFORMATION)
