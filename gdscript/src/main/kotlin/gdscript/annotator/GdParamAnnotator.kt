@@ -1,31 +1,34 @@
 package gdscript.annotator
 
-import com.intellij.lang.annotation.AnnotationHolder
-import com.intellij.lang.annotation.Annotator
-import com.intellij.lang.annotation.HighlightSeverity
+import com.intellij.lang.annotation.*
 import com.intellij.openapi.project.DumbService
 import com.intellij.psi.PsiElement
 import com.intellij.psi.util.PsiTreeUtil
+import gdscript.GdKeywords
 import gdscript.action.quickFix.GdChangeTypeFix
 import gdscript.action.quickFix.GdRemoveElementsAction
 import gdscript.completion.utils.GdMethodCompletionUtil.shortMethodHeader
-import gdscript.psi.GdCallEx
-import gdscript.psi.GdClassNaming
-import gdscript.psi.GdFuncDeclEx
-import gdscript.psi.GdMethodDeclTl
-import gdscript.psi.GdRefIdRef
-import gdscript.psi.GdVarDeclSt
-import gdscript.psi.utils.GdClassMemberUtil
+import gdscript.psi.*
+import gdscript.psi.utils.*
 import gdscript.psi.utils.GdClassMemberUtil.constructors
-import gdscript.psi.utils.GdExprUtil
-import gdscript.psi.utils.PsiGdSignalUtil
 import gdscript.reference.GdClassMemberReference
 import gdscript.utils.PsiElementUtil.nextNonWhiteCommentToken
 import gdscript.utils.PsiElementUtil.prevNonWhiteCommentToken
 import gdscript.utils.StringUtil.isDynamicType
 
+/**
+ * The `GdParamAnnotator` class is responsible for annotating GdScript method and function calls,
+ * ensuring their arguments comply with expected parameter requirements. It extends the `Annotator`
+ * interface and validates the number of arguments as well as their types against method or function definitions.
+ */
 class GdParamAnnotator : Annotator {
 
+    /**
+     * Annotates the specified PSI element with relevant information or errors.
+     *
+     * @param element The PSI element to be annotated. Expected to be of type `GdCallEx`.
+     * @param holder The annotation holder used to register annotations for the provided element.
+     */
     override fun annotate(element: PsiElement, holder: AnnotationHolder) {
         // Skip annotation if indices are not ready
         if (DumbService.isDumb(element.project)) {
@@ -46,7 +49,7 @@ class GdParamAnnotator : Annotator {
         val paramLists = when (declaration) {
             is GdMethodDeclTl -> {
                 if (declaration.isVariadic) return
-                if (declaration.name == "emit") {
+                if (declaration.name == GdKeywords.EMIT) {
                     val signal = PsiGdSignalUtil.getDeclaration(element) ?: return
                     descriptions.add(declaration.shortMethodHeader())
                     arrayOf(signal.paramList?.paramList)
@@ -58,7 +61,10 @@ class GdParamAnnotator : Annotator {
 
             is GdVarDeclSt -> {
                 val lambda =
-                    if (declaration.expr is GdFuncDeclEx) declaration.expr as GdFuncDeclEx else null ?: return
+                    if (declaration.expr is GdFuncDeclEx)
+                        declaration.expr as GdFuncDeclEx
+                    else return
+
                 descriptions.add(lambda.shortMethodHeader())
                 arrayOf(lambda.paramList?.paramList)
             }
@@ -98,8 +104,8 @@ class GdParamAnnotator : Annotator {
 
         val usedParamSize = element.argList?.argExprList?.size ?: 0
 
-        // Check number of arguments
-        if (usedParamSize > maxSize && element.argList != null) {
+        // Check the number of arguments
+        if ((usedParamSize > maxSize) && (element.argList != null)) {
             val toRemoveList = mutableListOf<PsiElement>()
             var toRemove: PsiElement? = element.argList!!.argExprList[maxSize]
             if (maxSize > 0) toRemoveList.add(toRemove!!.prevNonWhiteCommentToken()!!)
@@ -115,17 +121,19 @@ class GdParamAnnotator : Annotator {
                 .withFix(GdRemoveElementsAction(*toRemoveList.toTypedArray()))
                 .create()
             return
-        } else if (minSize in 1..98 && usedParamSize < minSize) {
-            holder
-                .newAnnotationGd(element.project, HighlightSeverity.ERROR, "Not enough arguments")
-                .range(element.textRange)
-                .create()
-            return
+        } else {
+            if ((minSize in (1..98)) && (usedParamSize < minSize)) {
+                holder
+                    .newAnnotationGd(element.project, HighlightSeverity.ERROR, "Not enough arguments")
+                    .range(element.textRange)
+                    .create()
+                return
+            }
         }
 
         if (usedParamSize == 0) return
 
-        // Check arguments types
+        // Check argument types
         val actualTypes = element.argList?.argExprList?.map { it.returnType }?.toTypedArray() ?: emptyArray()
 
         val matched = paramTypes.values
@@ -138,18 +146,20 @@ class GdParamAnnotator : Annotator {
 
         if (matched.isEmpty()) return
 
-        // One of overrides matched all params
+        // One of the overrides matched all params
         if (matched.any { it.all { p -> p } }) return
 
         if (paramLists.size > 1) {
             holder
                 .newAnnotationGd(element.project, HighlightSeverity.ERROR, "")
-                .tooltip("""<html><body>
+                .tooltip(
+                    """<html><body>
                     None of method definitions can be called with supplied arguments
                     <ul>
                         ${descriptions.joinToString("") { "<li><strong>$it</strong></li>" }}
                     </ul>
-                    </body></html>""".trimIndent())
+                    </body></html>""".trimIndent()
+                )
                 .range(element.textRange)
                 .create()
             return
@@ -163,7 +173,8 @@ class GdParamAnnotator : Annotator {
 
                     val annotator = holder
                         .newAnnotationGd(element.project, HighlightSeverity.ERROR, "")
-                        .tooltip("""
+                        .tooltip(
+                            """
                             <html><body>
                                 Type mismatch for ${param.varNmi.name}
                                 <table>
@@ -176,14 +187,18 @@ class GdParamAnnotator : Annotator {
                                         <td>${actualType}</td>
                                     </tr>
                                 </table>
-                            </html></body>""".trimIndent())
+                            </html></body>""".trimIndent()
+                        )
                         .range(actualParam.textRange)
+
                     if (!actualType.isDynamicType() && param.typed != null) {
                         annotator.withFix(GdChangeTypeFix(param.typed!!.typedVal, actualType))
                     }
+
                     annotator.create()
                 }
             }
+
             return
         }
     }
