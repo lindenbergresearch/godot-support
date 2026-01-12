@@ -34,7 +34,7 @@ object GdClassUtil {
     fun getClassIdElement(name: String, element: PsiElement, project: Project): PsiElement? {
         val path = name.toAbsoluteResource(element, project)
 
-        GdClassIdIndex.INSTANCE.getGloballyResolved(path, project).firstOrNull()?.let { return it }
+        INSTANCE.getGloballyResolved(path, project).firstOrNull()?.let { return it }
         GdFileResIndex.getFiles(path.trim('"', '\''), project).firstOrNull()?.let { return it.getPsiFile(project) }
         GdClassDeclIndex.INSTANCE.getInFile(name, element, project).firstOrNull()?.let { return it }
 
@@ -47,14 +47,14 @@ object GdClassUtil {
      * based on a given name and project context. This method is marked as deprecated
      * and is intended for internal usage only, typically invoked after resolving relative paths.
      *
-     * @param name the name of the class or resource to resolve. This can be a fully-qualified class name
+     * @param name the name of the class or resource to resolve. This can be a fully qualified class name
      *             or a resource key that may require conversion and resolution.
      * @param project the IntelliJ project context in which the resolution of the name is performed.
      * @return the resolved `PsiElement`, or `null` if no matching element could be resolved.
      */
     @Deprecated("For internal usage only called after resolving relative paths")
     fun getClassIdElement(name: String, project: Project): PsiElement? {
-        return GdClassIdIndex.INSTANCE.getGloballyResolved(name, project).firstOrNull()
+        return INSTANCE.getGloballyResolved(name, project).firstOrNull()
             ?: GdFileResIndex.getFiles(name.trim('"', '\''), project).firstOrNull()
                 ?.let { return it.getPsiFile(project) }
     }
