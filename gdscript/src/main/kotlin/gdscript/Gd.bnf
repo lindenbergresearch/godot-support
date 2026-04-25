@@ -1,5 +1,6 @@
 {
   parserClass="gdscript.parser.GdParser"
+  parserUtilClass="gdscript.parser.GdParserUtil"
 
   extends="com.intellij.extapi.psi.ASTWrapperPsiElement"
 

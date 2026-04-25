@@ -27,14 +27,20 @@ object GdKeywords {
     const val MASTER = "master"
     const val PUPPET = "puppet"
     const val REMOTE = "remote"
+
     const val REMOTE_SYNC = "remotesync"
     const val MASTER_SYNC = "mastersync"
     const val PUPPET_SYNC = "puppetsync"
+
     const val CONST = "const"
     const val VAR = "var"
     const val SELF = "self"
     const val SUPER = "super"
     const val VARIANT = "Variant"
+
+
+    /** actually not a keyword, used as constructor method <class>.new() */
+    const val NEW = "new"
 
 
     /** Constants */
@@ -61,11 +67,18 @@ object GdKeywords {
     const val FLOAT = "float"
     const val BOOL = "bool"
     const val STRING = "String"
+
     const val ARRAY = "Array"
+    const val ARRAY_OF_VARIANT = "Array[$VARIANT]"
+
     const val DICTIONARY = "Dictionary"
+    const val DICTIONARY_OF_VARIANT = "Dictionary[$VARIANT,$VARIANT]"
+
     const val STRING_NAME = "StringName"
     const val NODE_PATH = "NodePath"
+    const val PACKED_SCENE = "PackedScene"
     const val VOID = "void"
+    const val INSTANCE = "instance"
     const val CALLABLE = "Callable"
 
     val BUILT_TYPES = setOf(
@@ -76,6 +89,31 @@ object GdKeywords {
         ARRAY,
         DICTIONARY
     )
+
+
+    /** helper for parametric types */
+    fun typedArray(type: String): String {
+        return "$ARRAY[$type]"
+    }
+
+    fun typedDictionary(typeKey: String, typeValue: String): String {
+        return "$DICTIONARY[$typeKey, $typeValue]"
+    }
+
+
+    /** special methods */
+    const val METHOD_GET_NODE = "get_node"
+    const val METHOD_GET_NODE_OR_NULL = "get_node_or_null"
+    const val METHOD_GET_FIRST_NODE_IN_GROUP = "get_first_node_in_group"
+    const val METHOD_GET_NODES_IN_GROUP = "get_nodes_in_group"
+    const val METHOD_INSTANTIATE = "instantiate"
+    const val METHOD_GET_CHILD = "get_child"
+    const val METHOD_GET_PARENT = "get_parent"
+    const val METHOD_GET_CHILD_IN_GROUP = "get_child_in_group"
+
+
+    /** common classes */
+    const val CLASS_NODE = "Node"
 
 
     /** Prefixes */
@@ -109,4 +147,22 @@ object GdKeywords {
         ANNOTATION_ICON,
     )
 
+
+    /** common file suffixes/types */
+    const val FILE_SUFFIX_SCENE = ".tscn"
+    const val FILE_SUFFIX_RESOURCE = ".tres"
+    const val FILE_SUFFIX_GD_SCRIPT = ".gd"
+
+    fun isSceneFileName(fileName: String): Boolean {
+        return fileName.endsWith(FILE_SUFFIX_SCENE)
+    }
+
+    fun isResourceFileName(fileName: String): Boolean {
+        return fileName.endsWith(FILE_SUFFIX_RESOURCE)
+    }
+
+    fun isGDScriptFileName(fileName: String): Boolean {
+        return fileName.endsWith(FILE_SUFFIX_GD_SCRIPT)
+    }
+    
 }
