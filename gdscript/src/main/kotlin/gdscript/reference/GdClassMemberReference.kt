@@ -3,19 +3,21 @@ package gdscript.reference
 import GdScriptPluginIcons
 import com.intellij.codeInsight.highlighting.HighlightedReference
 import com.intellij.codeInsight.lookup.LookupElement
+import com.intellij.codeInsight.lookup.LookupElementBuilder
 import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.util.TextRange
 import com.intellij.psi.*
 import com.intellij.psi.impl.source.resolve.ResolveCache
 import com.intellij.psi.search.GlobalSearchScope
-import com.intellij.psi.util.PsiTreeUtil
-import com.intellij.psi.util.childrenOfType
+import com.intellij.psi.util.*
+import gdscript.GdKeywords
 import gdscript.completion.GdLookup
 import gdscript.completion.utils.GdCompletionUtil
 import gdscript.index.impl.GdClassNamingIndex
 import gdscript.psi.*
-import gdscript.psi.utils.GdClassMemberUtil
-import gdscript.psi.utils.GdClassUtil
+import gdscript.psi.impl.GdKeyValueImpl
+import gdscript.psi.impl.GdRefIdRefImpl
+import gdscript.psi.utils.*
 import gdscript.utils.PsiElementUtil.psi
 
 /**
@@ -28,14 +30,13 @@ class GdClassMemberReference : PsiReferenceBase<GdRefIdRef>, HighlightedReferenc
      * Companion object containing utility functions for resolving specific elements.
      */
     companion object {
-
         /**
          * Resolves the identifier of a given PsiElement based on its type.
          *
          * @param element the PsiElement whose identifier is to be resolved; may be null.
          * @return the resolved identifier as a PsiElement if applicable, or null if resolution is not possible.
          */
-        fun resolveId(element: PsiElement?): PsiElement? {
+        fun resolveId(element: PsiElement?): PsiNamedElement? {
             return when (element) {
                 is GdClassVarDeclTl -> element.varNmi
                 is GdClassDeclTl -> element.classNameNmi
@@ -66,6 +67,431 @@ class GdClassMemberReference : PsiReferenceBase<GdRefIdRef>, HighlightedReferenc
     constructor(element: GdRefIdRef) : super(element, TextRange(0, element.textLength))
 
 
+    private fun inferTypeFromPsi(element: PsiElement?): String {
+        if (element == null) return ""
+
+        return when (element) {
+            is GdKeyValueImpl -> inferTypeFromPsi(element.children.getOrNull(1))
+            is GdDictDecl -> "Dictionary[Variant, Variant]"
+            is GdArrayDecl -> "Array"
+
+            is GdPrimaryEx -> {
+                when {
+                    PsiTreeUtil.findChildOfType(element, GdDictDecl::class.java) != null -> "Dictionary[Variant, Variant]"
+                    PsiTreeUtil.findChildOfType(element, GdArrayDecl::class.java) != null -> "Array"
+                    else -> ""
+                }
+            }
+
+            else -> ""
+        }
+    }
+
+    private fun qualifierTypeWithDictionaryFallback(qualifierExpr: GdExpr?): String {
+        if (qualifierExpr == null) return ""
+
+        val dictElement = PsiGdExprUtil.resolveDictPathElement(qualifierExpr)
+        val dictType = inferTypeFromPsi(dictElement)
+        if (dictType.isNotEmpty()) {
+            return dictType
+        }
+
+        val refs = PsiTreeUtil.getChildrenOfType(qualifierExpr, GdRefIdRef::class.java)
+        val lastRef = refs?.lastOrNull() ?: return ""
+        val resolvedDecl = GdClassMemberUtil.findDeclaration(lastRef)?.psi() ?: return ""
+
+        return when (resolvedDecl) {
+            is GdSignalDeclTl -> GdKeywords.SIGNAL
+            is GdClassDeclTl -> GdClassUtil.getFullClassId(resolvedDecl)
+            is GdClassNaming -> GdClassUtil.getFullClassId(resolvedDecl)
+            is GdClassVarDeclTl -> resolvedDecl.returnType
+            is GdVarDeclSt -> resolvedDecl.returnType
+            is GdConstDeclTl -> resolvedDecl.returnType
+            is GdConstDeclSt -> resolvedDecl.returnType
+            is GdParam -> resolvedDecl.returnType
+            is GdMethodDeclTl -> resolvedDecl.returnType
+            else -> ""
+        }
+    }
+
+    private fun signalTargetRoot(): PsiElement? {
+        val byName = GdClassUtil.getClassIdElement("Signal", element, element.project)
+        val byKeyword = GdClassUtil.getClassIdElement(GdKeywords.SIGNAL, element, element.project)
+        val signalClass = byName ?: byKeyword ?: return null
+
+
+        when (signalClass) {
+            is GdClassDeclTl,
+            is GdClassNaming,
+            is GdClassNameNmi -> return signalClass
+        }
+
+        val classNaming = PsiTreeUtil.getParentOfType(signalClass, GdClassNaming::class.java, false)
+        if (classNaming != null) {
+            //println("signalTargetRoot: classNaming=${classNaming.javaClass.simpleName}")
+            return classNaming
+        }
+
+        val containingDecl = PsiTreeUtil.getParentOfType(signalClass, GdClassDeclTl::class.java, false)
+        if (containingDecl != null) {
+            //println("signalTargetRoot: containingDecl=${containingDecl.javaClass.simpleName}")
+            return containingDecl
+        }
+
+        val owningDecl = GdClassUtil.getOwningClassElement(signalClass)
+        if (owningDecl != null) {
+            //println("signalTargetRoot: owningDecl=${owningDecl.javaClass.simpleName}")
+            return owningDecl
+        }
+
+        val file = signalClass.containingFile
+        if (file != null) {
+            //println("signalTargetRoot: file=${file.virtualFile?.name}")
+            return file
+        }
+
+        return signalClass
+    }
+
+
+    private fun resolveSignalMember(memberName: String): PsiElement? {
+        val signalRoot = signalTargetRoot() ?: return null
+
+        val fromClassMembers = when (signalRoot) {
+            is GdClassDeclTl -> GdClassMemberUtil.listClassMemberDeclarations(
+                signalRoot,
+                static = false,
+                search = memberName,
+                constructors = false,
+                isRecursive = true,
+                includeUnnamedEnumValues = true,
+            ).firstOrNull()
+
+            is GdClassNaming -> GdClassMemberUtil.listClassMemberDeclarations(
+                signalRoot,
+                static = false,
+                search = memberName,
+                constructors = false,
+                isRecursive = true,
+                includeUnnamedEnumValues = true,
+            ).firstOrNull()
+
+            is GdClassNameNmi -> {
+                val classNaming = PsiTreeUtil.getParentOfType(signalRoot, GdClassNaming::class.java, false)
+                if (classNaming != null) {
+                    GdClassMemberUtil.listClassMemberDeclarations(
+                        classNaming,
+                        static = false,
+                        search = memberName,
+                        constructors = false,
+                        isRecursive = true,
+                        includeUnnamedEnumValues = true,
+                    ).firstOrNull()
+                } else {
+                    null
+                }
+            }
+
+            else -> null
+        }
+
+        if (fromClassMembers != null) {
+            //println("resolveSignalMember: class-member hit '$memberName' -> ${fromClassMembers.javaClass.simpleName}")
+            return fromClassMembers
+        }
+
+        val searchRoot = when (signalRoot) {
+            is GdClassNameNmi -> signalRoot.parent ?: signalRoot
+            else -> signalRoot
+        }
+
+        val named = PsiTreeUtil.findChildrenOfType(searchRoot, PsiNamedElement::class.java)
+            .firstOrNull { it.name == memberName }
+
+        if (named != null) {
+            //println("resolveSignalMember: named hit '$memberName' -> ${named.javaClass.simpleName}")
+            return named as PsiElement
+        }
+
+        //println("resolveSignalMember: miss '$memberName' root=${signalRoot.javaClass.simpleName}")
+        return null
+    }
+
+    private fun signalCompletionDeclarations(): List<PsiElement> {
+        val signalRoot = signalTargetRoot() ?: return emptyList()
+        // println("signalCompletionDeclarations: root=${signalRoot.javaClass.simpleName} text='${signalRoot.text.take(80)}'")
+
+        val classDecl = when (signalRoot) {
+            is GdClassDeclTl -> signalRoot
+            is GdClassNaming -> PsiTreeUtil.getParentOfType(signalRoot, GdClassDeclTl::class.java, false)
+            is GdClassNameNmi -> PsiTreeUtil.getParentOfType(signalRoot, GdClassDeclTl::class.java, false)
+            else -> PsiTreeUtil.getParentOfType(signalRoot, GdClassDeclTl::class.java, false)
+        }
+
+        val fromClassMembers: List<PsiElement> = if (classDecl != null) {
+            GdClassMemberUtil.listClassMemberDeclarations(
+                classDecl,
+                static = false,
+                search = null,
+                constructors = false,
+                isRecursive = true,
+                includeUnnamedEnumValues = true,
+            )
+        } else {
+            emptyList()
+        }
+
+        val searchRoot = signalRoot.containingFile ?: signalRoot
+        val named = collectCompletionDeclarations(searchRoot)
+
+        return (fromClassMembers + named)
+            .distinctBy { decl ->
+                when (decl) {
+                    is PsiNamedElement -> decl.name ?: decl.text
+                    else -> decl.text
+                }
+            }
+    }
+
+    private fun collectCompletionDeclarations(root: PsiElement): List<PsiElement> {
+        val declarations = buildList<PsiElement> {
+            addAll(PsiTreeUtil.findChildrenOfType(root, GdClassVarDeclTl::class.java))
+            addAll(PsiTreeUtil.findChildrenOfType(root, GdConstDeclTl::class.java))
+            addAll(PsiTreeUtil.findChildrenOfType(root, GdMethodDeclTl::class.java))
+            addAll(PsiTreeUtil.findChildrenOfType(root, GdSignalDeclTl::class.java))
+            addAll(PsiTreeUtil.findChildrenOfType(root, GdEnumDeclTl::class.java))
+            addAll(PsiTreeUtil.findChildrenOfType(root, GdClassDeclTl::class.java))
+        }
+
+        return declarations.distinctBy { decl ->
+            when (decl) {
+                is PsiNamedElement -> decl.name ?: decl.text
+                else -> decl.text
+            }
+        }
+    }
+
+
+    /**
+     * Completion for signal variables cannot rely solely on the regular reference/type pipeline,
+     * because signal qualifiers may resolve to no declaration in completion context even though
+     * the signal is declared in the surrounding script. Fall back to a direct name lookup in the
+     * owning class and then in the containing file.
+     */
+    private fun resolveSignalDeclarationByName(expr: GdExpr?): GdSignalDeclTl? {
+        if (expr == null) return null
+
+        // This fallback is only valid for plain signal identifiers such as
+        // `level_theme_changed` in `level_theme_changed.<caret>`.
+        // It must NOT inspect nested ref ids inside call/attribute expressions like
+        // `level_theme_changed.emit()` because that would incorrectly treat the whole
+        // call expression as the original signal variable again.
+        val signalName = when (expr) {
+            is GdLiteralEx -> expr.refIdNm?.text
+            is GdRefIdRef -> expr.text
+            else -> null
+        } ?: return null
+
+        val owningClass = PsiTreeUtil.getParentOfType(element, GdClassDeclTl::class.java, false)
+        if (owningClass != null) {
+            val classSignals = PsiTreeUtil.findChildrenOfType(owningClass, GdSignalDeclTl::class.java)
+            val hit = classSignals.firstOrNull { signal ->
+                val name = signal.signalIdNmi?.name ?: signal.name
+                name == signalName
+            }
+            if (hit != null) {
+                return hit
+            }
+        }
+
+        val file = element.containingFile
+        val fileSignals = PsiTreeUtil.findChildrenOfType(file, GdSignalDeclTl::class.java)
+        return fileSignals.firstOrNull { signal ->
+            val name = signal.signalIdNmi?.name ?: signal.name
+            name == signalName
+        }
+    }
+
+    private fun qualifierCompletionDeclarations(qualifierExpr: GdExpr?): List<PsiElement> {
+        if (qualifierExpr == null) return emptyList()
+
+        if (qualifierExpr.text == GdKeywords.SELF) {
+            val nearestClassDecl = PsiTreeUtil.getParentOfType(element, GdClassDeclTl::class.java, false)
+            val owningClass = GdClassUtil.getOwningClassElement(element)
+            val containingFile = element.containingFile as? GdFile
+
+            val classRoot = when {
+                nearestClassDecl != null -> nearestClassDecl as PsiElement
+                owningClass is GdClassDeclTl -> owningClass
+                owningClass is GdClassNaming -> owningClass
+                containingFile != null -> containingFile
+                else -> null
+            } ?: return emptyList()
+
+            val fromClassMembers: List<PsiElement> = when (classRoot) {
+                is GdClassDeclTl -> GdClassMemberUtil.listClassMemberDeclarations(
+                    classRoot,
+                    static = false,
+                    search = null,
+                    constructors = false,
+                    isRecursive = true,
+                    includeUnnamedEnumValues = true,
+                )
+
+                is GdClassNaming -> GdClassMemberUtil.listClassMemberDeclarations(
+                    classRoot,
+                    static = false,
+                    search = null,
+                    constructors = false,
+                    isRecursive = true,
+                    includeUnnamedEnumValues = true,
+                )
+
+                is GdFile -> buildList {
+                    addAll(PsiTreeUtil.getStubChildrenOfTypeAsList(classRoot, GdClassVarDeclTl::class.java))
+                    addAll(PsiTreeUtil.getStubChildrenOfTypeAsList(classRoot, GdConstDeclTl::class.java))
+                    addAll(PsiTreeUtil.getStubChildrenOfTypeAsList(classRoot, GdMethodDeclTl::class.java))
+                    addAll(PsiTreeUtil.getStubChildrenOfTypeAsList(classRoot, GdSignalDeclTl::class.java))
+                    addAll(PsiTreeUtil.getStubChildrenOfTypeAsList(classRoot, GdEnumDeclTl::class.java))
+                    addAll(PsiTreeUtil.getStubChildrenOfTypeAsList(classRoot, GdClassDeclTl::class.java))
+                }
+
+                else -> emptyList()
+            }
+
+            val searchRoot: PsiElement = when (classRoot) {
+                is GdClassDeclTl -> classRoot
+                is GdClassNaming -> classRoot.parent ?: classRoot
+                is GdFile -> classRoot
+                else -> classRoot
+            }
+
+            val named = collectCompletionDeclarations(searchRoot)
+
+            return (fromClassMembers + named)
+                .distinctBy { decl ->
+                    when (decl) {
+                        is PsiNamedElement -> decl.name ?: decl.text
+                        else -> decl.text
+                    }
+                }
+        }
+
+        val qualifierRef = when (qualifierExpr) {
+            is GdRefIdRef -> qualifierExpr
+            is GdLiteralEx -> qualifierExpr.refIdNm
+            else -> PsiTreeUtil.findChildOfType(qualifierExpr, GdRefIdRef::class.java)
+        }
+
+        val resolvedByReference = when (val ref = qualifierRef?.reference) {
+            is GdClassMemberReference -> ref.resolveDeclaration()
+            else -> null
+        }
+
+        // println("qualifierCompletionDeclarations: qualifierRef=${qualifierRef?.javaClass?.simpleName} text='${qualifierRef?.text}'")
+
+        // println("qualifierCompletionDeclarations: resolvedByReference=${resolvedByReference?.javaClass?.simpleName} text='${resolvedByReference?.text?.take(80)}'")
+        if (resolvedByReference is GdSignalDeclTl) {
+            // println("qualifierCompletionDeclarations: signal by qualifier reference resolution")
+            return signalCompletionDeclarations()
+        }
+
+        // Signal qualifiers may fail normal resolve/type inference during completion.
+        // In that case, detect locally declared signals by name and reuse the Signal builtin members.
+        val directSignalByName = resolveSignalDeclarationByName(qualifierExpr)
+        // println("qualifierCompletionDeclarations: directSignalByName=${directSignalByName?.javaClass?.simpleName} text='${directSignalByName?.text?.take(80)}'")
+        if (directSignalByName != null) {
+            // println("qualifierCompletionDeclarations: signal by direct name lookup")
+            return signalCompletionDeclarations()
+        }
+
+
+        val signalDecl = when (val resolved = qualifierRef?.let { GdClassMemberUtil.findDeclaration(it) }) {
+            is GdSignalDeclTl -> resolved
+            else -> null
+        }
+        if (signalDecl != null) {
+            // println("qualifierCompletionDeclarations: direct signal decl by ref '${signalDecl.name}'")
+            return signalCompletionDeclarations()
+        }
+
+        val inferredQualifierType = qualifierTypeWithDictionaryFallback(qualifierExpr)
+        val literalQualifierType = literalCompletionType(qualifierExpr)
+        val qualifierType = inferredQualifierType.ifEmpty { literalQualifierType }
+
+        if (isSignalType(qualifierType)) {
+            return signalCompletionDeclarations()
+        }
+
+        if (qualifierType.equals(GdKeywords.VOID, ignoreCase = true) || qualifierType.equals("void", ignoreCase = true)) {
+            return emptyList()
+        }
+
+        val dictElement = PsiGdExprUtil.resolveDictPathElement(qualifierExpr)
+        val dictType = inferTypeFromPsi(dictElement)
+        // println("qualifierCompletionDeclarations: dictType='$dictType'")
+        if (isSignalType(dictType)) {
+            // println("qualifierCompletionDeclarations: signal by dictType")
+            return signalCompletionDeclarations()
+        }
+
+        if (qualifierType.isEmpty()) {
+            return emptyList()
+        }
+
+        val target = GdClassUtil.getClassIdElement(qualifierType, element, element.project) ?: return emptyList()
+        val classRoot = GdClassUtil.getOwningClassElement(target) ?: target
+
+        val fromClassMembers: List<PsiElement> = when (classRoot) {
+            is GdClassDeclTl -> GdClassMemberUtil.listClassMemberDeclarations(
+                classRoot,
+                static = false,
+                search = null,
+                constructors = false,
+                isRecursive = true,
+                includeUnnamedEnumValues = true,
+            )
+
+            is GdClassNaming -> GdClassMemberUtil.listClassMemberDeclarations(
+                classRoot,
+                static = false,
+                search = null,
+                constructors = false,
+                isRecursive = true,
+                includeUnnamedEnumValues = true,
+            )
+
+            is GdClassNameNmi -> {
+                val classNaming = PsiTreeUtil.getParentOfType(classRoot, GdClassNaming::class.java, false)
+                if (classNaming != null) {
+                    GdClassMemberUtil.listClassMemberDeclarations(
+                        classNaming,
+                        static = false,
+                        search = null,
+                        constructors = false,
+                        isRecursive = true,
+                        includeUnnamedEnumValues = true,
+                    )
+                } else {
+                    emptyList()
+                }
+            }
+
+            else -> emptyList()
+        }
+
+        val named = collectCompletionDeclarations(classRoot)
+
+        return (fromClassMembers + named)
+            .distinctBy { decl ->
+                when (decl) {
+                    is PsiNamedElement -> decl.name ?: decl.text
+                    else -> decl.text
+                }
+            }
+    }
+
+
     /**
      * Handles renaming of the underlying element by substituting it with a new reference
      * created from the provided new element name.
@@ -75,6 +501,11 @@ class GdClassMemberReference : PsiReferenceBase<GdRefIdRef>, HighlightedReferenc
      */
     override fun handleElementRename(newElementName: String): PsiElement {
         return myElement.replace(GdElementFactory.refIdNm(myElement.project, newElementName))
+    }
+
+
+    private fun isSignalType(type: String): Boolean {
+        return type == "signal" || type == "Signal" || type.endsWith(".Signal")
     }
 
 
@@ -95,7 +526,22 @@ class GdClassMemberReference : PsiReferenceBase<GdRefIdRef>, HighlightedReferenc
         val resolved = cache.resolveWithCaching(
             this,
             ResolveCache.Resolver { _, _ ->
+
+                if (element is GdRefIdRefImpl && element.text.trim() == GdKeywords.NEW)
+                    return@Resolver null
+
                 val qualifierExpr = GdClassMemberUtil.calledUpon(element)
+
+                val dictPath = PsiGdExprUtil.resolveDictPathElement(element)
+                if (dictPath != null) return@Resolver dictPath
+
+                val qualifierType = qualifierTypeWithDictionaryFallback(qualifierExpr)
+                //println("qualifierType='$qualifierType' keyword='${GdKeywords.SIGNAL}' isSignal=${isSignalType(qualifierType)}")
+
+                if (isSignalType(qualifierType)) {
+                    val signalMember = resolveSignalMember(element.text)
+                    signalMember?.let { return@Resolver it }
+                }
 
                 // Anonymous/Named Enum member access
                 // e.g., Animation.TYPE_AUDIO or _Anim.FLOOR
@@ -118,6 +564,7 @@ class GdClassMemberReference : PsiReferenceBase<GdRefIdRef>, HighlightedReferenc
                         else -> null
                     }
 
+
                     if (containerElement != null) {
                         val enumValueName = element.text
 
@@ -126,21 +573,22 @@ class GdClassMemberReference : PsiReferenceBase<GdRefIdRef>, HighlightedReferenc
                             val enumValue = containerElement.enumValueList.firstOrNull { enumVal ->
                                 enumVal.enumValueNmi.text == enumValueName
                             }
+
                             enumValue?.let { return@Resolver it }
                         }
 
-                        // If it's a class declaration, search ALL enums (anonymous and named)
-                        if (containerElement is GdClassDeclTl) {
-                            val allEnums = containerElement.childrenOfType<GdEnumDeclTl>()
-                            for (enumDecl in allEnums) {
-                                val enumValue = enumDecl.enumValueList.firstOrNull { enumVal ->
-                                    enumVal.enumValueNmi.text == enumValueName
-                                }
-                                if (enumValue != null) {
-                                    return@Resolver enumValue
-                                }
-                            }
-                        }
+//                        // If it's a class declaration, search ALL enums (anonymous and named)
+//                        if (containerElement is GdClassDeclTl) {
+//                            val allEnums = containerElement.childrenOfType<GdEnumDeclTl>()
+//                            for (enumDecl in allEnums) {
+//                                val enumValue = enumDecl.enumValueList.firstOrNull { enumVal ->
+//                                    enumVal.enumValueNmi.text == enumValueName
+//                                }
+//                                if (enumValue != null) {
+//                                    return@Resolver enumValue
+//                                }
+//                            }
+//                        }
 
                         // If it's a GdClassNaming, we need to search enums there too
                         if (containerElement is GdClassNaming) {
@@ -158,7 +606,7 @@ class GdClassMemberReference : PsiReferenceBase<GdRefIdRef>, HighlightedReferenc
                         }
 
                         // If it's a file, search enums there
-                        if (containerElement is PsiFile) {
+                        if (containerElement is PsiFile || containerElement is GdClassDeclTl) {
                             val allEnums = containerElement.childrenOfType<GdEnumDeclTl>()
                             for (enumDecl in allEnums) {
                                 val enumValue = enumDecl.enumValueList.firstOrNull { enumVal ->
@@ -206,10 +654,9 @@ class GdClassMemberReference : PsiReferenceBase<GdRefIdRef>, HighlightedReferenc
                     return (current != null) && (i == parts.size)
                 }
 
-                val targetClassDecl = qualifierExpr?.let { expr ->
-                    val type = expr.returnType
-                    if (type.isNotEmpty()) {
-                        val target = GdClassUtil.getClassIdElement(type, element, element.project)
+                val targetClassDecl = qualifierExpr?.let {
+                    if (qualifierType.isNotEmpty()) {
+                        val target = GdClassUtil.getClassIdElement(qualifierType, element, element.project)
                         target?.let { GdClassUtil.getOwningClassElement(it) as? GdClassDeclTl }
                     } else null
                 }
@@ -240,7 +687,8 @@ class GdClassMemberReference : PsiReferenceBase<GdRefIdRef>, HighlightedReferenc
                                 val initText = init.text.orEmpty()
                                 if (initText.isNotEmpty() && resolvesToClassChain(initText)) {
                                     val name = element.text
-                                    if ((name != "new") && (name != "instance")) {
+
+                                    if ((name != GdKeywords.NEW) && (name != GdKeywords.INSTANCE)) {
                                         return@Resolver null
                                     }
                                 }
@@ -309,6 +757,7 @@ class GdClassMemberReference : PsiReferenceBase<GdRefIdRef>, HighlightedReferenc
                             return@Resolver null
                         }
                     }
+
                 }
 
                 resolved
@@ -339,6 +788,46 @@ class GdClassMemberReference : PsiReferenceBase<GdRefIdRef>, HighlightedReferenc
             .firstOrNull()?.containingFile
     }
 
+    private fun immediateCompletionQualifier(): GdExpr? {
+        val attribute = PsiTreeUtil.getParentOfType(element, GdAttributeEx::class.java, false)
+        val directExpr = attribute?.expr
+
+        // In incomplete PSI after expressions like `signal.emit().<caret>`, the surrounding
+        // attribute may still expose the older qualifier instead of the direct call expression.
+        // Prefer the nearest preceding call expression if it ends immediately before the dot.
+        val prevLeaf = PsiTreeUtil.prevVisibleLeaf(element)
+        val prevCall = prevLeaf?.let { PsiTreeUtil.getParentOfType(it, GdCallEx::class.java, false) }
+        if (prevCall != null) {
+            return prevCall
+        }
+
+        if (directExpr != null) {
+            return directExpr
+        }
+
+        return GdClassMemberUtil.calledUpon(element)
+    }
+
+    private fun literalCompletionType(expr: GdExpr?): String {
+        if (expr == null) return ""
+
+        val text = expr.text.trim()
+        if (text.length >= 2 && text.startsWith('"') && text.endsWith('"')) {
+            return GdKeywords.STRING
+        }
+        if (text == "true" || text == "false") {
+            return GdKeywords.BOOL
+        }
+        if (text.matches(Regex("^-?\\d+$"))) {
+            return GdKeywords.INT
+        }
+        if (text.matches(Regex("^-?\\d+\\.\\d+([eE][+-]?\\d+)?$")) || text.matches(Regex("^-?\\d+[eE][+-]?\\d+$"))) {
+            return GdKeywords.FLOAT
+        }
+
+        return ""
+    }
+
 
     /**
      * Provides a list of possible code completion variants for the referenced element.
@@ -346,38 +835,109 @@ class GdClassMemberReference : PsiReferenceBase<GdRefIdRef>, HighlightedReferenc
      * @return An array of LookupElement objects representing the possible completion elements.
      */
     override fun getVariants(): Array<LookupElement> {
-        val declarations = GdClassMemberUtil.listDeclarations(element)
-
-        val lookups = declarations.flatMap {
-            val result = GdCompletionUtil.lookups(it, completionIntoCallableParam())
-            result.toList()
+        val qualifierExpr = immediateCompletionQualifier()
+        val qualifierDeclarations: List<PsiElement> = qualifierCompletionDeclarations(qualifierExpr)
+        val directQualifierType = qualifierExpr?.returnType?.trim().orEmpty()
+        val fallbackQualifierType = qualifierExpr?.let { qualifierTypeWithDictionaryFallback(it).trim() }.orEmpty()
+        val literalQualifierType = literalCompletionType(qualifierExpr).trim()
+        val qualifierType = directQualifierType.ifEmpty {
+            fallbackQualifierType.ifEmpty { literalQualifierType }
         }
+
+//        println("getVariants: element='${element.text}' class=${element.javaClass.simpleName}")
+//        println("getVariants: parent='${element.parent?.text}' parentClass=${element.parent?.javaClass?.simpleName}")
+//        println("getVariants: immediateQualifier='${immediateCompletionQualifier()?.text}'")
+//        println("getVariants: calledUpon='${GdClassMemberUtil.calledUpon(element)?.text}'")
+//        println("getVariants: prevVisibleLeaf='${PsiTreeUtil.prevVisibleLeaf(element)?.text}'")
+//        println("getVariants: prevCall='${PsiTreeUtil.prevVisibleLeaf(element)?.let { PsiTreeUtil.getParentOfType(it, GdCallEx::class.java, false) }?.text}'")
+
+
+        val isQualifiedContext = PsiTreeUtil.getParentOfType(element, GdAttributeEx::class.java, false) != null
+            || PsiTreeUtil.prevVisibleLeaf(element)?.elementType == GdTypes.DOT
+
+        val declarations: List<PsiElement> = when {
+            !isQualifiedContext -> {
+                GdClassMemberUtil.listDeclarations(element).filterIsInstance<PsiElement>()
+            }
+
+            (qualifierExpr is GdCallEx) && (
+                directQualifierType.equals(GdKeywords.VOID, ignoreCase = true)
+                    || directQualifierType.equals("void", ignoreCase = true)
+                    || fallbackQualifierType.equals(GdKeywords.VOID, ignoreCase = true)
+                    || fallbackQualifierType.equals("void", ignoreCase = true)
+                    || qualifierType.equals(GdKeywords.VOID, ignoreCase = true)
+                    || qualifierType.equals("void", ignoreCase = true)
+                ) -> {
+                emptyList()
+            }
+
+            qualifierDeclarations.isNotEmpty() -> {
+                qualifierDeclarations
+            }
+
+            directQualifierType.isNotEmpty()
+                || fallbackQualifierType.isNotEmpty()
+                || literalQualifierType.isNotEmpty()
+                || qualifierType.isNotEmpty() -> {
+                emptyList()
+            }
+
+            else -> {
+                emptyList()
+            }
+        }
+
+        val lookups = declarations
+            .distinctBy { decl ->
+                when (decl) {
+                    is PsiNamedElement -> decl.name ?: decl.text
+                    else -> decl.text
+                }
+            }
+            .flatMap { decl ->
+                val built = GdCompletionUtil.lookups(decl, completionIntoCallableParam()).toList()
+                built.ifEmpty {
+                    val name = (decl as? PsiNamedElement)?.name
+                    if (!name.isNullOrBlank()) {
+                        listOf(LookupElementBuilder.create(name))
+                    } else {
+                        emptyList()
+                    }
+                }
+            }
 
         return lookups.toTypedArray()
     }
 
 
-    /**
-     * Determines whether the context of the current element corresponds to a callable parameter position.
-     *
-     * This method traverses the PSI tree, analyzing the surrounding elements for a specific context. It identifies
-     * if the current argument expression corresponds to a parameter of type "Callable" in a method declaration.
-     *
-     * @return true if the element is in a context where its parameter is of type "Callable"; false otherwise
-     */
-//TODO: check why condition is always true
+    /*
+    * Determines whether the context of the current element corresponds to a callable parameter position.
+    *
+    * This method traverses the PSI tree, analyzing the surrounding elements for a specific context. It identifies
+    * if the current argument expression corresponds to a parameter of type "Callable" in a method declaration.
+    *
+    * @return true if the element is in a context where its parameter is of type "Callable"; false otherwise
+    */
     private fun completionIntoCallableParam(): Boolean {
-        return PsiTreeUtil.getParentOfType(element, GdArgExpr::class.java)?.let { arg ->
-            PsiTreeUtil.getParentOfType(arg, GdCallEx::class.java)?.let {
-                val index = arg.parent.children.indexOf(arg)
-                val refId = PsiTreeUtil.getChildrenOfType(it.expr, GdRefIdRef::class.java)?.lastOrNull() ?: return false
-                val decl = GdClassMemberReference(refId).resolveDeclaration()
-                if (decl is GdMethodDeclTl) {
-                    return decl.parameters.values.toTypedArray().getOrNull(index).orEmpty() == "Callable"
-                }
-                return false
-            }
-        } ?: false
+        val arg = PsiTreeUtil.getParentOfType(element, GdArgExpr::class.java) ?: return false
+        val call = PsiTreeUtil.getParentOfType(arg, GdCallEx::class.java) ?: return false
+
+        val argContainer = arg.parent ?: return false
+        val args = PsiTreeUtil.getChildrenOfTypeAsList(argContainer, GdArgExpr::class.java)
+        val index = args.indexOf(arg)
+        if (index < 0) return false
+
+        val refId = PsiTreeUtil.getChildrenOfType(call.expr, GdRefIdRef::class.java)?.lastOrNull() ?: return false
+        val decl = GdClassMemberReference(refId).resolveDeclaration()
+
+        if (decl is GdMethodDeclTl) {
+            val paramType = decl.parameters.values.elementAtOrNull(index).orEmpty().trim()
+            return paramType.equals(GdKeywords.CALLABLE, ignoreCase = true)
+                || paramType.endsWith(".Callable")
+                || paramType.endsWith(".callable")
+        }
+
+        return false
     }
 
 
@@ -412,7 +972,7 @@ class GdClassMemberReference : PsiReferenceBase<GdRefIdRef>, HighlightedReferenc
      * @return `true` if the declaration indicates static access, `false` if it indicates
      *         instance access, and `null` if it cannot be determined.
      */
-// Helpers to keep resolve/completion logic concise
+    // Helpers to keep resolve/completion logic concise
     private fun inferStaticAccessFromDecl(decl: PsiElement?): Boolean? {
         fun inferFromInitializer(expr: GdExpr?): Boolean? {
             val call = expr as? GdCallEx

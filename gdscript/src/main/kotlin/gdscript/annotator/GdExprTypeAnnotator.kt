@@ -195,7 +195,7 @@ class GdExprTypeAnnotator : Annotator {
             is GdVarDeclSt -> {
                 // For explicitly typed variables
                 if (declaration.typed != null) {
-                    return PsiGdExprUtil.fromTyped(declaration.typed)
+                    return PsiGdExprUtil.extractSubtype(declaration.typed)
                 }
 
                 // For: = assignment (inferred typed), get type from the initial expression
@@ -210,7 +210,7 @@ class GdExprTypeAnnotator : Annotator {
             is GdClassVarDeclTl -> {
                 // For explicitly typed variables
                 if (declaration.typed != null) {
-                    return PsiGdExprUtil.fromTyped(declaration.typed)
+                    return PsiGdExprUtil.extractSubtype(declaration.typed)
                 }
 
                 // For: = assignment (inferred typed), get type from the initial expression

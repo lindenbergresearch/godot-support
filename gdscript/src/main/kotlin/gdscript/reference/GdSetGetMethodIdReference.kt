@@ -1,5 +1,6 @@
 package gdscript.reference
 
+import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.util.TextRange
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiReferenceBase
@@ -9,6 +10,7 @@ import gdscript.psi.GdGetMethodIdRef
 import gdscript.psi.GdSetMethodIdRef
 import gdscript.psi.utils.GdClassMemberUtil
 import gdscript.psi.utils.GdClassMemberUtil.methods
+import gdscript.psi.utils.limitPad
 
 class GdSetGetMethodIdReference : PsiReferenceBase<PsiElement> {
 
@@ -28,6 +30,7 @@ class GdSetGetMethodIdReference : PsiReferenceBase<PsiElement> {
     }
 
     override fun resolve(): PsiElement? {
+        if (DumbService.isDumb(element.project)) return null
         val members = GdClassMemberUtil.listClassMemberDeclarations(element, false)
 
         return members.methods().find { it.name == key }?.methodIdNmi

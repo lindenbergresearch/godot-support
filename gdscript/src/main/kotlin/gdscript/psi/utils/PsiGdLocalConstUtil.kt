@@ -7,7 +7,7 @@ object PsiGdLocalConstUtil {
 
     fun getReturnType(element: GdConstDeclSt): String {
         if (element.typed !== null) {
-            return PsiGdExprUtil.fromTyped(element.typed)
+            return PsiGdExprUtil.extractSubtype(element.typed)
         }
 
         return element.expr?.returnType ?: ""

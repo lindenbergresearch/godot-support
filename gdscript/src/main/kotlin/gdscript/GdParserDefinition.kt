@@ -1,28 +1,19 @@
 package gdscript
 
-import com.intellij.lang.ASTNode
-import com.intellij.lang.ParserDefinition
+import com.intellij.lang.*
 import com.intellij.lang.ParserDefinition.SpaceRequirements
-import com.intellij.lang.PsiParser
 import com.intellij.lexer.Lexer
 import com.intellij.openapi.project.Project
-import com.intellij.psi.FileViewProvider
-import com.intellij.psi.PsiElement
-import com.intellij.psi.PsiFile
+import com.intellij.psi.*
 import com.intellij.psi.stubs.PsiFileStub
-import com.intellij.psi.tree.IFileElementType
-import com.intellij.psi.tree.IStubFileElementType
-import com.intellij.psi.tree.TokenSet
+import com.intellij.psi.tree.*
 import com.jetbrains.rider.godot.community.gdscript.GdLanguage
 import gdscript.parser.GdRootParser
 import gdscript.psi.GdFile
 import gdscript.psi.GdTypes
 
 class GdParserDefinition : ParserDefinition {
-
     companion object {
-        val COMMENTS = TokenSet.create(GdTypes.COMMENT, GdTypes.BACKSLASH)
-        val STRING_LITERALS = TokenSet.create(GdTypes.STRING)
         val FILE = IStubFileElementType<PsiFileStub<GdFile>>("GdScriptFile", GdLanguage)
     }
 
@@ -31,11 +22,11 @@ class GdParserDefinition : ParserDefinition {
     }
 
     override fun getCommentTokens(): TokenSet {
-        return COMMENTS
+        return TokenSet.create(GdTypes.COMMENT, GdTypes.BACKSLASH)
     }
 
     override fun getStringLiteralElements(): TokenSet {
-        return STRING_LITERALS
+        return TokenSet.create(GdTypes.STRING)
     }
 
     override fun createParser(project: Project): PsiParser {

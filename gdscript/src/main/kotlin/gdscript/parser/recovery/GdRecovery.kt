@@ -27,7 +27,7 @@ object GdRecovery : GdBaseParser {
         }
 
         if (any != null && !b.isError) {
-            m.error("unexpected '$any'")
+            m.error(GdScriptBundle.message("parsing.error.unexpected", any))
         } else {
             m.drop()
         }

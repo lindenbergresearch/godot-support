@@ -2,9 +2,7 @@ import org.gradle.api.tasks.testing.logging.TestExceptionFormat
 import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 import java.net.URI
-import java.net.http.HttpClient
-import java.net.http.HttpRequest
-import java.net.http.HttpResponse
+import java.net.http.*
 import kotlin.io.path.Path
 import kotlin.io.path.pathString
 
@@ -48,7 +46,7 @@ dependencies {
     compileOnly(":rider-godot-community")
 
     intellijPlatform {
-        intellijIdeaCommunity("2025.1") { useInstaller = false }
+        intellijIdeaCommunity("2025.3") { useInstaller = false }
         // rider(libs.versions.riderSdk, useInstaller = false) // instead of touching this, just use runRider gradle task
         jetbrainsRuntime()
         // you need to compile the community plugin in advance, or this would fail. I haven't found a workaround
@@ -64,31 +62,32 @@ dependencies {
     testRuntimeOnly("org.junit.vintage:junit-vintage-engine:5.10.0")
 }
 
-intellijPlatform{
+intellijPlatform {
     instrumentCode = false
     buildSearchableOptions = buildConfiguration != "Debug"
 }
 
 tasks {
-    // todo: tobe removed with RIDER-127007 Different approach to GD sdk
     register("prepare") {
         doLast {
             val url = "https://packages.jetbrains.team/files/p/net/gdscriptsdk/gdscriptsdk-1.0.0-SNAPSHOT.tar.xz"
             val sdkDir = project.layout.buildDirectory.dir("sdk").get().asFile
-            
+
             // Create the SDK directory if it doesn't exist
             if (!sdkDir.exists()) {
                 sdkDir.mkdirs()
             }
-            
+
             // Download the SDK
             val sdkFile = sdkDir.resolve("sdk.tar.xz")
             if (sdkFile.exists()) {
                 return@doLast
             }
+            
             val client = HttpClient.newBuilder()
                 .followRedirects(HttpClient.Redirect.NORMAL)
                 .build()
+            
             val request = HttpRequest.newBuilder()
                 .uri(URI.create(url))
                 .build()
@@ -97,16 +96,16 @@ tasks {
                 request,
                 HttpResponse.BodyHandlers.ofFile(sdkFile.toPath())
             )
-            
+
             logger.lifecycle("Downloaded SDK from $url to ${sdkFile.absolutePath}")
         }
     }
 
-    prepareSandbox{
+    prepareSandbox {
         dependsOn("prepare")
         val pluginName = intellijPlatform.projectName.get()
         val sdkDir = project.layout.buildDirectory.dir("sdk").get().asFile
-        from(sdkDir) { into(Path(pluginName, "sdk").pathString)}
+        from(sdkDir) { into(Path(pluginName, "sdk").pathString) }
     }
 
     // run it to start Rider from SDK

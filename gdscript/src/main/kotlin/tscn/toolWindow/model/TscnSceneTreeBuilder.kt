@@ -93,14 +93,38 @@ class TscnSceneTreeBuilder {
                 return StringSelection(text)
             }
         }
+
         tree.cellRenderer = TscnSceneCellRenderer(project)
         tree.addMouseListener(object : MouseAdapter() {
-            override fun mouseClicked(e: MouseEvent) {
-                val node = tree.getClosestPathForLocation(e.x, e.y).lastPathComponent as TscnSceneTreeNode? ?: return
+            override fun mouseClicked(e: MouseEvent?) {
+                if (e == null || e.button != MouseEvent.BUTTON1) return
 
-                val index = (tree.width - e.x) / TscnSceneCellRenderer.BUTTON_WIDTH
+                println("clicked: e=${e.source.javaClass.simpleName}")
+
+                val p = tree.getClosestPathForLocation(e.x, e.y)
+                println("closestPathForLocation: path=$p")
+
+                p.path.forEach { p ->
+                    if (p != null && !p.toString().trim().isEmpty()) println("path: ${p.javaClass.simpleName} : $p") else println("path: null")
+                }
+
+                val node = (p.lastPathComponent as TscnSceneTreeNode?) ?: return
+
+
+                val index = (tree.width - e.x - TscnSceneCellRenderer.ICON_LEFT_MARGIN) / (TscnSceneCellRenderer.ICON_WIDTH + TscnSceneCellRenderer.ICON_GAP)
+
+                println("tree.width=${tree.width} e=[${e.x} ${e.y}] width=${TscnSceneCellRenderer.ICON_WIDTH} index=$index")
+
+                node.listActions().forEach { println("action - $it") }
+
                 val action = node.listActions().reversed().getOrNull(index) ?: return
+
+                println("run action ->  $action")
+
+                tree.toolTipText = "Click to open resource: ${node.resource} action=$action"
                 callAction(node, action)
+
+                println("click: name=${node.myName} hasScript=${node.hasScript} actions=${node.listActions()} index=$e.x / $index action=${action.javaClass.simpleName} ")
             }
         })
 
@@ -108,16 +132,18 @@ class TscnSceneTreeBuilder {
         nodes.firstOrNull()?.let {
             if (it.instanceResource.isNotBlank()) parent = it.instanceResource
         }
+        
         addParentScene(treeModel, tree, parent)
         nodes.forEach { treeModel.addNodeChild(it, resolveType(it)) }
 
-        var j = tree.getRowCount()
+        var j = tree.rowCount
         var i = 0
         while (i < j) {
             tree.expandRow(i)
             i++
-            j = tree.getRowCount()
+            j = tree.rowCount
         }
+        
         tree.emptyText.text = "No nodes"
 
         return ScrollPaneFactory.createScrollPane(tree, true)
@@ -133,6 +159,7 @@ class TscnSceneTreeBuilder {
             nodes.first()?.let {
                 if (it.instanceResource.isNotBlank()) parent = it.instanceResource
             }
+            
             addParentScene(treeModel, tree, parent)
             nodes.forEach { treeModel.addNodeChild(it, resolveType(it), inherited = true) }
         }
@@ -142,7 +169,7 @@ class TscnSceneTreeBuilder {
         val instance = node.instanceResource
         if (instance.isBlank()) return null
 
-        GdClassUtil.getClassIdElement(instance, project)?.let { psiElement ->
+        GdClassUtil.getClassIdElement(instance, node, project)?.let { psiElement ->
             if (psiElement is TscnFile) PsiTreeUtil.findChildOfType(psiElement, TscnNodeHeader::class.java)?.let {
                 return it.type.ifEmpty { resolveType(it) } ?: ""
             }
@@ -154,16 +181,21 @@ class TscnSceneTreeBuilder {
     private fun callAction(node: TscnSceneTreeNode, action: String) {
         when (action) {
             "instance", "script" -> {
-                ReadAction.nonBlocking(Callable {
-                    GdFileResIndex.getFiles(node.resource, project).firstOrNull()
-                })
+                ReadAction.nonBlocking(
+                    /* task = */
+                    Callable {
+                        GdFileResIndex.getFiles(node.resource, project).firstOrNull()
+                    },
+                )
                     .finishOnUiThread(ModalityState.defaultModalityState()) {
                         it?.let { OpenFileDescriptor(project, it).navigate(true) }
                     }
                     .submit(AppExecutorUtil.getAppExecutorService())
             }
 
-            "unique" -> {}
+            "unique" -> {
+
+            }
 
             "visible" -> {}
         }

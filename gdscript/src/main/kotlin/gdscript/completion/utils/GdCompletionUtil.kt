@@ -7,7 +7,10 @@ import gdscript.completion.GdLookup
 import gdscript.completion.utils.GdClassCompletionUtil.lookup
 import gdscript.completion.utils.GdEnumCompletionUtil.lookup
 import gdscript.psi.*
+import gdscript.psi.impl.GdMethodDeclTlImpl
+import gdscript.psi.impl.GdMethodIdNmiImpl
 import gdscript.psi.utils.PsiGdExprUtil
+import gdscript.psi.utils.limit
 import gdscript.utils.StringUtil.parseFromSquare
 import project.psi.model.GdAutoload
 
@@ -31,24 +34,27 @@ import project.psi.model.GdAutoload
 object GdCompletionUtil {
 
     fun lookups(element: Any, isCallable: Boolean = false): Array<LookupElement> {
+    //    println("lookups: ${element.javaClass.simpleName} isCallable: $isCallable element: ${element.toString().limit(50)}")
         return when (element) {
-            is GdClassDeclTl    -> arrayOf(element.lookup())
-            is GdClassNaming    -> arrayOf(lookup(element))
+            is GdClassDeclTl -> arrayOf(element.lookup())
+            is GdClassNaming -> arrayOf(lookup(element))
             is GdClassVarDeclTl -> arrayOf(lookup(element))
-            is GdVarDeclSt      -> arrayOf(lookup(element))
-            is GdConstDeclTl    -> arrayOf(lookup(element))
-            is GdConstDeclSt    -> arrayOf(lookup(element))
-            is GdEnumDeclTl     -> lookup(element)
-            is GdEnumValue      -> arrayOf(lookup(element))
-            is GdMethodDeclTl   -> arrayOf(lookup(element, isCallable))
-            is GdForSt          -> arrayOf(lookup(element))
-            is GdParam          -> arrayOf(lookup(element))
-            is GdSetDecl        -> arrayOf(lookup(element))
+            is GdVarDeclSt -> arrayOf(lookup(element))
+            is GdConstDeclTl -> arrayOf(lookup(element))
+            is GdConstDeclSt -> arrayOf(lookup(element))
+            is GdEnumDeclTl -> lookup(element)
+            is GdEnumValue -> arrayOf(lookup(element))
+            is GdMethodDeclTl -> arrayOf(lookup(element, isCallable))
+            is GdMethodIdNmi -> arrayOf(lookup(element, isCallable))
+            is GdMethodIdNmiImpl -> arrayOf(lookup(element, isCallable))
+            is GdForSt -> arrayOf(lookup(element))
+            is GdParam -> arrayOf(lookup(element))
+            is GdSetDecl -> arrayOf(lookup(element))
             is GdBindingPattern -> arrayOf(lookup(element))
-            is GdSignalDeclTl   -> arrayOf(lookup(element))
-            is GdVarNmi         -> arrayOf(lookup(element))
-            is GdAutoload       -> arrayOf(lookup(element))
-            else                -> emptyArray()
+            is GdSignalDeclTl -> arrayOf(lookup(element))
+            is GdVarNmi -> arrayOf(lookup(element))
+            is GdAutoload -> arrayOf(lookup(element))
+            else -> emptyArray()
         }
     }
 
@@ -113,6 +119,17 @@ object GdCompletionUtil {
         )
     }
 
+    fun lookup(method: GdMethodIdNmi, isCallable: Boolean = false): LookupElement {
+        val methodName = method.name
+        return GdLookup.create(
+            methodName,
+            lookup = if (isCallable) "" else "()",
+            presentable = methodName,
+            icon = GdScriptPluginIcons.GDScriptIcons.METHOD_MARKER,
+            priority = GdLookup.USER_DEFINED,
+        )
+    }
+
     fun lookup(loop: GdForSt): LookupElement =
         GdLookup.create(
             loop.varNmi?.name ?: "",
@@ -138,7 +155,7 @@ object GdCompletionUtil {
 
         return GdLookup.create(
             variable.name,
-            typed = PsiGdExprUtil.fromTyped(typed),
+            typed = PsiGdExprUtil.extractSubtype(typed),
             icon = GdScriptPluginIcons.GDScriptIcons.VAR_MARKER,
             priority = GdLookup.LOCAL_USER_DEFINED,
         )

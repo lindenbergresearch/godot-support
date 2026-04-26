@@ -1,3 +1,5 @@
+import org.jetbrains.intellij.platform.gradle.extensions.IntelliJPlatformDependencyConfiguration
+
 plugins {
     alias(libs.plugins.gradleIntelliJPlatform)
     alias(libs.plugins.gradleJvmWrapper)
@@ -25,7 +27,7 @@ repositories {
 
 dependencies {
     intellijPlatform {
-        intellijIdeaCommunity("2025.1") { useInstaller = false }
+        intellijIdea("2025.3") { useInstaller = false }
         // rider(libs.versions.riderSdk, useInstaller = false)
         jetbrainsRuntime()
     }

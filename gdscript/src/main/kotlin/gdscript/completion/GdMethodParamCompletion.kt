@@ -5,7 +5,6 @@ import com.intellij.codeInsight.completion.CompletionParameters
 import com.intellij.codeInsight.completion.CompletionResultSet
 import com.intellij.patterns.PlatformPatterns.psiElement
 import com.intellij.psi.util.PsiTreeUtil
-import gdscript.index.impl.GdClassIdIndex
 import gdscript.psi.*
 import gdscript.psi.utils.GdClassUtil
 import gdscript.reference.GdClassMemberReference
@@ -22,7 +21,7 @@ class GdMethodParamCompletion : CompletionContributor() {
     override fun fillCompletionVariants(parameters: CompletionParameters, result: CompletionResultSet) {
         if (PARAM_VAR_NMI.accepts(parameters.position)) {
             // Types
-            GdClassIdIndex.INSTANCE.getAllKeys(parameters.position.project)
+            gdscript.index.impl.INSTANCE.getAllKeys(parameters.position.project)
                 .forEach {
                     result.addElement(
                         GdLookup.create(

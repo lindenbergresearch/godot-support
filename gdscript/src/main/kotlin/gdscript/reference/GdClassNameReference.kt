@@ -1,9 +1,11 @@
 package gdscript.reference
 
+import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.util.TextRange
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiReferenceBase
 import gdscript.psi.GdClassNameNmi
+import gdscript.psi.utils.limitPad
 
 class GdClassNameReference : PsiReferenceBase<GdClassNameNmi> {
 
@@ -15,6 +17,8 @@ class GdClassNameReference : PsiReferenceBase<GdClassNameNmi> {
     }
 
     override fun resolve(): PsiElement? {
+        if (DumbService.isDumb(element.project)) return null
+
         return element.containingFile
     }
 

@@ -1,8 +1,9 @@
 package gdscript.psi.utils
 
+import com.intellij.openapi.util.Key
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
-import com.intellij.psi.util.PsiTreeUtil
+import com.intellij.psi.util.*
 import gdscript.index.impl.GdFileResIndex
 import gdscript.model.GdNodeHolder
 import gdscript.psi.GdNodePath
@@ -17,6 +18,9 @@ import kotlin.io.path.relativeTo
  * Node utils for available nodes from given script
  */
 object GdNodeUtil {
+    private val NODE_LIST_CACHE_KEY =
+        Key.create<CachedValue<Array<GdNodeHolder>>>("gdscript.node.list.cache")
+
 
     /**
      * Returns corresponding node for given NodePath element
@@ -31,17 +35,39 @@ object GdNodeUtil {
         return nodes.find { it.relativePath.trim('$') == path || it.uniqueId?.trim('%') == path }
     }
 
-    /**
-     * List all available nodes for given file with parsed relative paths
-     */
-    fun listNodes(element: PsiElement): Array<GdNodeHolder> {
-        val scripts = TscnResourceUtil.findTscnByResources(element)
+    private fun getCachedNodes(element: PsiElement): Array<GdNodeHolder> {
+        val file = element.containingFile ?: return emptyArray()
+        val manager = CachedValuesManager.getManager(file.project)
+
+        return manager.getCachedValue(
+            file,
+            NODE_LIST_CACHE_KEY,
+            { computeNodeList(file) },
+            false
+        )
+    }
+
+    private fun listNodesInternal(file: PsiFile): Array<GdNodeHolder> {
+        val scripts = TscnResourceUtil.findTscnByResources(file)
         if (scripts.isEmpty()) return emptyArray()
 
         val connectedNodes = scripts.flatMap { listConnectedNodesForResource(it) }
 
-        return connectedNodes.flatMap { listAvailableNodeForNode(it, connectedNodes.size <= 1) }
+        return connectedNodes
+            .flatMap { listAvailableNodeForNode(it, connectedNodes.size <= 1) }
             .toTypedArray()
+    }
+
+    fun listNodes(element: PsiElement): Array<GdNodeHolder> {
+        return getCachedNodes(element)
+    }
+
+    private fun computeNodeList(file: PsiFile): CachedValueProvider.Result<Array<GdNodeHolder>> {
+        val result = listNodesInternal(file)
+        return CachedValueProvider.Result.create(
+            result,
+            PsiModificationTracker.MODIFICATION_COUNT
+        )
     }
 
     fun TscnNodeHeader.relativeOrUniquePath(basePath: String): String {

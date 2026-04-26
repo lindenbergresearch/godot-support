@@ -2,7 +2,6 @@ package gdscript.psi.utils
 
 import gdscript.psi.GdParam
 import gdscript.psi.GdParamList
-import java.lang.StringBuilder
 
 object PsiGdParameterUtil {
 
@@ -27,7 +26,7 @@ object PsiGdParameterUtil {
         var child = paramList?.firstChild
         while (child != null) {
             if (child is GdParam) {
-                params[child.varNmi.text] = PsiGdExprUtil.fromTyped(child.typed)
+                params[child.varNmi.text] = PsiGdExprUtil.extractSubtype(child.typed)
             }
             child = child.nextSibling
         }

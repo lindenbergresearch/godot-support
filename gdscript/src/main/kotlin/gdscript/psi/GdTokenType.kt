@@ -11,7 +11,7 @@ class GdTokenType(debugName: @NonNls String) : IElementType(debugName, GdLanguag
     }
 
     /**
-     * Compares two token by name.
+     * Compares two tokens by name.
      */
     fun equalsTokenType(other: IElementType): Boolean {
         return this.toString() == other.toString()

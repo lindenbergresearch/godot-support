@@ -2,6 +2,7 @@ package gdscript.reference
 
 import com.intellij.codeInsight.lookup.LookupElement
 import com.intellij.openapi.diagnostic.thisLogger
+import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.TextRange
 import com.intellij.openapi.vfs.findFileOrDirectory
@@ -12,6 +13,7 @@ import gdscript.completion.GdLookup
 import gdscript.index.impl.GdFileResIndex
 import gdscript.psi.GdElementFactory
 import gdscript.psi.utils.GdCfgUtil
+import gdscript.psi.utils.limitPad
 import gdscript.utils.StringUtil.filterGdTscn
 import gdscript.utils.VirtualFileUtil.getPsiFile
 import gdscript.utils.VirtualFileUtil.resourcePath
@@ -61,6 +63,8 @@ class GdResourceReference : PsiReferenceBase<PsiElement> {
     }
 
     override fun resolve(): PsiElement? {
+        if (DumbService.isDumb(element.project)) return null
+        
         return GdFileResIndex.getFiles(resKey, project)
             .firstOrNull()
             ?.getPsiFile(project)

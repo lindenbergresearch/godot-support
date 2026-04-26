@@ -1,5 +1,5 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
-package gdscript.competion.utils
+package gdscript.completion.utils
 
 import com.intellij.codeInsight.completion.InsertHandler
 import com.intellij.codeInsight.completion.InsertionContext
@@ -38,13 +38,8 @@ class GdLookupElementBuilder private constructor(
     allLookupStrings: Set<String> = setOf(myLookupString),
     caseSensitive: Boolean = true
 ) : LookupElement() {
-    private val myCaseSensitive: Boolean
-    private val myAllLookupStrings: Set<String>
-
-    init {
-        myAllLookupStrings = Collections.unmodifiableSet(allLookupStrings)
-        myCaseSensitive = caseSensitive
-    }
+    private val myCaseSensitive: Boolean = caseSensitive
+    private val myAllLookupStrings: Set<String> = Collections.unmodifiableSet(allLookupStrings)
 
     private fun cloneWithUserData(
         lookupString: String, `object`: Any,

@@ -2,7 +2,7 @@ package tscn.psi.utils
 
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiElement
-import gdscript.psi.utils.PsiGdResourceUtil
+import gdscript.utils.VirtualFileUtil.resourcePath
 import tscn.index.impl.TscnResourceIndex
 import tscn.psi.TscnResourceHeader
 
@@ -30,15 +30,16 @@ object TscnResourceUtil {
         return TscnHeaderUtils.getValue(element.headerValueList, TscnHeaderUtils.HL_TYPE)
     }
 
+
     @Deprecated("list list below - script might be in multiple .tscn")
     fun findTscnByResource(element: PsiElement): TscnResourceHeader? {
-        val resource = PsiGdResourceUtil.resourcePath(element.containingFile.originalFile.virtualFile)
+        val resource = element.containingFile.originalFile.virtualFile.resourcePath()
 
         return TscnResourceIndex.INSTANCE.getGlobally(resource, element).firstOrNull()
     }
 
     fun findTscnByResources(element: PsiElement): Collection<TscnResourceHeader> {
-        val resource = PsiGdResourceUtil.resourcePath(element.containingFile.originalFile.virtualFile)
+        val resource = element.containingFile.originalFile.virtualFile.resourcePath()
 
         return findTscnByResources(resource, element.project)
     }

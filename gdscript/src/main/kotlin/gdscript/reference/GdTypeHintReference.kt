@@ -2,6 +2,7 @@ package gdscript.reference
 
 import GdScriptPluginIcons
 import com.intellij.codeInsight.lookup.LookupElement
+import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.TextRange
 import com.intellij.psi.PsiElement
@@ -83,6 +84,8 @@ class GdTypeHintReference : PsiReferenceBase<GdTypeHintRef> {
      * @return the resolved `PsiElement`, or `null` if no element can be resolved
      */
     override fun resolve(): PsiElement? {
+        if (DumbService.isDumb(element.project)) return null
+        
         val cache = ResolveCache.getInstance(project)
         return cache.resolveWithCaching(
             this,
@@ -100,7 +103,7 @@ class GdTypeHintReference : PsiReferenceBase<GdTypeHintRef> {
                 resolveInner(container)?.let { return@Resolver it }
                 (container as? GdClassDeclTl)?.let { it1 -> resolveInner(it1.parent)?.let { return@Resolver it } }
 
-                GdClassUtil.getClassIdElement(GdKeywords.GLOBAL_SCOPE, project)?.let {
+                getClassIdElement(GdKeywords.GLOBAL_SCOPE, project)?.let {
                     return@Resolver resolveInner(GdClassUtil.getOwningClassElement(it))
                 }
             },

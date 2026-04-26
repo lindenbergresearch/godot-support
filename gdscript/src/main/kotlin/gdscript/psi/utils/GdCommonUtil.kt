@@ -23,6 +23,7 @@ object GdCommonUtil {
         return element.text
     }
 
+
     /**
      * Retrieves the name of the given PsiElement.
      *
@@ -34,12 +35,12 @@ object GdCommonUtil {
      */
     fun getName(element: PsiElement): String {
         return when (element) {
-            is GdNamedElement -> element.text
-            is GdConstDeclTl -> element.name
+            is GdNamedElement   -> element.text
+            is GdConstDeclTl    -> element.name
             is GdClassVarDeclTl -> element.name
-            is GdConstDeclSt -> element.name
-            is GdVarDeclSt -> element.name
-            else -> ""
+            is GdConstDeclSt    -> element.name
+            is GdVarDeclSt      -> element.name
+            else                -> ""
         }
     }
 
@@ -81,6 +82,7 @@ object GdCommonUtil {
         return element.firstChild
     }
 
+
     /**
      * Renames a given PsiNamedElement with a new name while updating the relevant AST nodes.
      *
@@ -94,22 +96,22 @@ object GdCommonUtil {
 
         if (keyNode != null) {
             val id = when (element) {
-                is GdClassNameNmi -> {
+                is GdClassNameNmi        -> {
                     GdCfgUtil.renameValue(project, element.name, newName)
                     GdElementFactory.classNameNmi(project, newName)
                 }
 
-                is GdEnumDeclNmi -> GdElementFactory.enumDeclNmi(project, newName)
-                is GdEnumValueNmi -> GdElementFactory.enumValueNmi(project, newName)
-                is GdFuncDeclIdNmi -> GdElementFactory.funcDeclIdNmi(project, newName)
-                is GdInheritanceIdRef -> GdElementFactory.inheritanceIdNm(project, newName)
+                is GdEnumDeclNmi         -> GdElementFactory.enumDeclNmi(project, newName)
+                is GdEnumValueNmi        -> GdElementFactory.enumValueNmi(project, newName)
+                is GdFuncDeclIdNmi       -> GdElementFactory.funcDeclIdNmi(project, newName)
+                is GdInheritanceIdRef    -> GdElementFactory.inheritanceIdNm(project, newName)
                 is GdInheritanceSubIdRef -> GdElementFactory.inheritanceSubIdNm(project, newName)
-                is GdMethodIdNmi -> GdElementFactory.methodIdNmi(project, newName)
-                is GdRefIdRef -> GdElementFactory.refIdNm(project, newName)
-                is GdSignalIdNmi -> GdElementFactory.signalIdNmi(project, newName)
-                is GdStringValRef -> GdElementFactory.typeStringVal(project, newName)
-                is GdVarNmi -> GdElementFactory.varNmi(project, newName)
-                else -> return element
+                is GdMethodIdNmi         -> GdElementFactory.methodIdNmi(project, newName)
+                is GdRefIdRef            -> GdElementFactory.refIdNm(project, newName)
+                is GdSignalIdNmi         -> GdElementFactory.signalIdNmi(project, newName)
+                is GdStringValRef        -> GdElementFactory.typeStringVal(project, newName)
+                is GdVarNmi              -> GdElementFactory.varNmi(project, newName)
+                else                     -> return element
             }
 
             element.node.replaceChild(keyNode, id.node)
@@ -117,6 +119,7 @@ object GdCommonUtil {
 
         return element
     }
+
 
     /**
      * Resolves and returns the return type for the given PsiElement.
@@ -129,26 +132,26 @@ object GdCommonUtil {
      */
     fun returnType(element: PsiElement?): String {
         return when (element) {
-            is GdConstDeclTl -> element.returnType
-            is GdClassVarDeclTl -> element.returnType
-            is GdMethodDeclTl -> element.returnType
-            is GdFuncDeclEx -> element.returnType
-            is GdParam -> element.returnType
-            is GdArgExpr -> element.returnType
-            is GdVarDeclSt -> element.returnType
-            is GdConstDeclSt -> element.returnType
-            is GdExpr -> element.returnType
-            is GdTypedVal -> element.returnType
-            is GdClassNaming -> element.classname
-            is GdClassDeclTl -> element.classNameNmi?.classId.orEmpty()
-            is GdEnumDeclTl -> handleEnumDecl(element)
-            is GdEnumValue -> GdKeywords.INT
-            is GdSignalDeclTl -> "Signal"
-            is GdSetDecl -> handleSetDecl(element)
-            is GdForSt -> handleForStmt(element)
+            is GdConstDeclTl      -> element.returnType
+            is GdClassVarDeclTl   -> element.returnType
+            is GdMethodDeclTl     -> element.returnType
+            is GdFuncDeclEx       -> element.returnType
+            is GdParam            -> element.returnType
+            is GdArgExpr          -> element.returnType
+            is GdVarDeclSt        -> element.returnType
+            is GdConstDeclSt      -> element.returnType
+            is GdExpr             -> element.returnType
+            is GdTypedVal         -> element.returnType
+            is GdClassNaming      -> element.classname
+            is GdClassDeclTl      -> element.classNameNmi?.classId.orEmpty()
+            is GdEnumDeclTl       -> handleEnumDecl(element)
+            is GdEnumValue        -> GdKeywords.INT
+            is GdSignalDeclTl     -> GdKeywords.SIGNAL
+            is GdSetDecl          -> handleSetDecl(element)
+            is GdForSt            -> handleForStmt(element)
             is GdEnumValueNmiImpl -> handleEnumDecl(element)
-            null -> return ""
-            else -> throw NotImplementedError(element.toString())
+            null                  -> ""
+            else                  -> throw NotImplementedError(element.toString())
         }
     }
 
@@ -193,6 +196,7 @@ object GdCommonUtil {
             "EnumDictionary"
         }
     }
+
 
     /**
      * Handles an enumeration declaration by constructing a fully qualified name
@@ -245,13 +249,13 @@ object GdCommonUtil {
      */
     fun typed(element: PsiElement?): GdTyped? {
         return when (element) {
-            is GdConstDeclTl -> element.typed
+            is GdConstDeclTl    -> element.typed
             is GdClassVarDeclTl -> element.typed
-            is GdSetDecl -> element.typed
-            is GdParam -> element.typed
-            is GdVarDeclSt -> element.typed
-            is GdConstDeclSt -> element.typed
-            else -> null
+            is GdSetDecl        -> element.typed
+            is GdParam          -> element.typed
+            is GdVarDeclSt      -> element.typed
+            is GdConstDeclSt    -> element.typed
+            else                -> null
         }
     }
 

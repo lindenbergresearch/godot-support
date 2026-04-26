@@ -1,6 +1,7 @@
 package gdscript.reference
 
 import com.intellij.codeInsight.lookup.LookupElement
+import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.TextRange
 import com.intellij.psi.PsiElement
@@ -13,6 +14,7 @@ import gdscript.completion.utils.GdClassCompletionUtil.lookup
 import gdscript.index.impl.GdFileResIndex
 import gdscript.psi.*
 import gdscript.psi.utils.GdClassUtil
+import gdscript.psi.utils.limitPad
 import gdscript.utils.PsiFileUtil.toAbsoluteResource
 import gdscript.utils.VirtualFileUtil.resourcePath
 import java.nio.file.Paths
@@ -47,6 +49,8 @@ class GdInheritanceReference : PsiReferenceBase<PsiElement> {
     }
 
     override fun resolve(): PsiElement? {
+        if (DumbService.isDumb(element.project)) return null
+
         val cache = ResolveCache.getInstance(project)
         return cache.resolveWithCaching(
             this,

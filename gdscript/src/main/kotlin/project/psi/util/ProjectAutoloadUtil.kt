@@ -41,8 +41,10 @@ object ProjectAutoloadUtil {
     }
 
     private fun all(project: Project): List<ProjectData> {
-        val section = ProjectSectionIndex.INSTANCE.getGlobally(ProjectSectionIndex.AUTOLOAD_SECTION, project)
+        val section = ProjectSectionIndex.INSTANCE
+            .getGlobally(ProjectSectionIndex.AUTOLOAD_SECTION, project)
             .firstOrNull() ?: return emptyList()
+        
         return PsiTreeUtil.getStubChildrenOfTypeAsList(section, ProjectData::class.java)
     }
 
@@ -54,6 +56,7 @@ object ProjectAutoloadUtil {
                 if (gdFile != null && gdFile.fileType is GdFileType) return GdAutoload(key, gdFile)
             }
         }
+        
         return null
     }
 }

@@ -13,6 +13,7 @@ import com.intellij.openapi.roots.libraries.LibraryTablesRegistrar
 import com.intellij.openapi.util.Version
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.util.io.Decompressor
+import com.jetbrains.rider.godot.community.gdscript.GdLanguage
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.*
@@ -24,10 +25,7 @@ object GdLibraryManager {
 
     fun registerSdkIfNeeded(path: Path, project: Project) {
         val sourceRoot = LocalFileSystem.getInstance().refreshAndFindFileByPath(path.pathString)
-
-        if (sourceRoot == null) {
-            throw Exception("Cannot find SDK at $path")
-        }
+            ?: throw Exception("Cannot find SDK at $path")
 
         val libraryTable = LibraryTablesRegistrar.getInstance().getLibraryTable(project)
         libraryTable.getLibraryByName(LIBRARY_NAME)?.let {
@@ -37,7 +35,8 @@ object GdLibraryManager {
             // vs
             // /Users/ivan.shakhov/Work/ultimate/out/dev-run/rider
             if (it.isValid(sourceRoot.url, OrderRootType.SOURCES)
-                && libraryTable.libraries.count { library -> library.name?.startsWith(LIBRARY_NAME) == true } == 1) {
+                && libraryTable.libraries.count { library -> library.name?.startsWith(LIBRARY_NAME) == true } == 1
+            ) {
                 return@registerSdkIfNeeded
             }
         }
@@ -76,7 +75,7 @@ object GdLibraryManager {
         var name = getPluginByClass(GdLibraryManager::class.java)?.name
         if (name == null) {
             thisLogger().error("Cannot find Godot plugin ID")
-            name = "GdScript"
+            name = GdLanguage.id
         }
         val extractionDir = PathManager.getPluginsDir().resolve(name).resolve("extracted")
 
@@ -84,8 +83,8 @@ object GdLibraryManager {
         val validator = SdkIntegrityValidator()
         val extractionStampFile = extractionDir.resolve(SdkIntegrityValidator.STAMP_FILE_NAME).toFile()
         val needsExtraction = !extractionDir.toFile().exists() ||
-                              !extractionStampFile.exists() ||
-                              extractionStampFile.readText().trim() != validator.getFilesFromFs(extractionDir).count().toString()
+            !extractionStampFile.exists() ||
+            extractionStampFile.readText().trim() != validator.getFilesFromFs(extractionDir).count().toString()
 
         // Extract SDK if needed
         if (needsExtraction) {

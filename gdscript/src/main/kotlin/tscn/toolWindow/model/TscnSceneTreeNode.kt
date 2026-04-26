@@ -119,4 +119,8 @@ class TscnSceneTreeNode : DefaultMutableTreeNode {
         }
     }
 
+    override fun toString(): String {
+        return "TscnSceneTreeNode(myName='$myName', myType='$myType', inherited=$inherited, basePath='$basePath', hasScript=$hasScript, hasUniqueName=$hasUniqueName, isInstance=$isInstance, resource='$resource', visible=$visible, parentVisible=$parentVisible)"
+    }
+
 }

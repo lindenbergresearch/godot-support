@@ -31,7 +31,7 @@ object PsiGdMethodDeclUtil {
     }
 
     fun getReturnType(element: GdParam): String {
-        element.typed?.let { return PsiGdExprUtil.fromTyped(it) }
+        element.typed?.let { return PsiGdExprUtil.extractSubtype(it) }
 
         return element.expr?.returnType ?: ""
     }

@@ -11,7 +11,7 @@ object PsiGdClassVarUtil {
 
     fun getReturnType(element: GdClassVarDeclTl): String {
         if (element.typed !== null) {
-            return PsiGdExprUtil.fromTyped(element.typed)
+            return PsiGdExprUtil.extractSubtype(element.typed)
         }
 
         return element.expr?.returnType ?: ""

@@ -3,7 +3,7 @@ package gdscript.completion
 import com.intellij.codeInsight.completion.InsertHandler
 import com.intellij.codeInsight.completion.PrioritizedLookupElement
 import com.intellij.codeInsight.lookup.LookupElement
-import gdscript.competion.utils.GdLookupElementBuilder
+import gdscript.completion.utils.GdLookupElementBuilder
 import gdscript.competion.utils.GdLookupInsertHandler
 import java.awt.Color
 import javax.swing.Icon

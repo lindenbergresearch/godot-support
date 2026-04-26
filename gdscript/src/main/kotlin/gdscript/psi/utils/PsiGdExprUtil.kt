@@ -2,21 +2,30 @@ package gdscript.psi.utils
 
 import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.TextRange
 import com.intellij.openapi.vfs.readText
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.util.*
+import com.intellij.util.containers.tail
+import fleet.multiplatform.shims.currentThreadId
 import gdscript.GdKeywords
 import gdscript.index.impl.GdClassNamingIndex
 import gdscript.index.impl.GdFileResIndex
 import gdscript.psi.*
+import gdscript.psi.impl.*
+import gdscript.psi.utils.AnsiHelper.toSubscriptNumbers
+import gdscript.psi.utils.StringHelper.objToHexString
+import gdscript.psi.utils.StringHelper.toHexString
 import gdscript.reference.GdClassMemberReference
 import gdscript.utils.GdExprUtil.left
 import gdscript.utils.GdExprUtil.right
 import gdscript.utils.GdOperand
+import gdscript.utils.PsiElementUtil.psi
 import gdscript.utils.PsiFileUtil.toAbsoluteResource
 import gdscript.utils.VirtualFileUtil.getPsiFile
+import kotlinx.html.emptyMap
 import project.psi.model.GdAutoload
 import java.nio.file.FileSystems
 
@@ -58,6 +67,68 @@ private inline fun <T> withCycleDetection(element: PsiElement, block: () -> T, d
 }
 
 
+/** String helper methods - TODO: shound be moved to some util class or something! */
+
+fun String?.symbolizeWS(colorize: Boolean = true): String {
+    if (this == null) return "null"
+    val t = this
+        .replace("\r\n", "↵")
+        .replace('\r', '·')
+        .replace('\n', '↵')
+        .replace('\t', '⇥')
+        .replace(' ', '·')
+//        .replace(Regex("\\s+"), "#")
+        .trim()
+
+    if (colorize) {
+        return t
+            .replace("↵", Ansi.BRIGHT_BLUE + "↵" + Ansi.RESET)
+            .replace("·", Ansi.BRIGHT_BLUE + "·" + Ansi.RESET)
+            .replace("⇥", Ansi.BRIGHT_BLUE + "⇥" + Ansi.RESET)
+    }
+
+    return t
+}
+
+fun String?.limit(n: Int): String {
+    if (this == null) {
+        return "null"
+    }
+    if (length <= n) {
+        return this
+    }
+
+    return this.take(n - 1) + "…"
+
+}
+
+fun String?.limitPad(n: Int, removeWs: Boolean = true, doRight: Boolean = false): String {
+    if (this == null) return if (doRight) "NULL".padStart(n) else "NULL".padEnd(n)
+
+    var s = this.trim()
+
+    if (removeWs) {
+        s = s.replace(Regex("\\s+"), " ")
+    }
+
+    if (s.isEmpty()) return if (doRight) s.padStart(n) else s.padEnd(n)
+
+    if ((n > 1) && (this.length > n)) {
+        return s.take(n - 1) + "…"
+    }
+
+    return if (doRight) s.padStart(n) else s.padEnd(n)
+}
+
+
+fun List<String>.dropPrefix(prefix: String): List<String> {
+    if (this.isEmpty()) return emptyList()
+    if (!this.contains(prefix)) return emptyList()
+
+    return this.dropWhile { elem -> elem != prefix }.tail()
+}
+
+
 /**
  * Represents the location of a PSI (Program Structure Interface) element in a source file.
  * This includes details such as the PSI element, file, line number, text offset, text length,
@@ -75,7 +146,9 @@ data class SourceLocation(
     val file: PsiFile,
     val line: Int,
     val offset: Int,
+    val lineOffset: Int,
     val length: Int,
+    val lineText: String,
     val path: List<String> = emptyList(),
 ) {
     /**
@@ -86,16 +159,24 @@ data class SourceLocation(
         /**
          * Creates a SourceLocation instance from the given PsiElement.
          *
-         * @param psiElement the PsiElement from which the SourceLocation is to be created.
+         * @param element the PsiElement from which the SourceLocation is to be created.
          * @return a SourceLocation object representing the location of the PsiElement, including file information, line number, offset, text length, and file path components.
          */
-        fun from(psiElement: PsiElement): SourceLocation {
-            val file = psiElement.containingFile
-            val offset = psiElement.textRange.startOffset
+        fun from(element: PsiElement): SourceLocation {
+            val file = element.containingFile
+            val offset = element.textRange.startOffset
             val line = file.viewProvider.document?.getLineNumber(offset) ?: -1
             val paths: List<String> = file.virtualFile?.path?.split(FileSystems.getDefault().separator) ?: emptyList()
 
-            return SourceLocation(psiElement, file, line + 1, offset, psiElement.textLength, paths)
+            val document = element.containingFile.viewProvider.document
+
+            val start = document.getLineStartOffset(line)
+            val end = document.getLineEndOffset(line)
+            val lineText = document.getText(TextRange(start, end))
+
+            val lineOffs = offset - document.getLineStartOffset(line)
+
+            return SourceLocation(element, file, line + 1, offset, lineOffs, element.textLength, lineText, paths)
         }
     }
 
@@ -117,16 +198,25 @@ data class SourceLocation(
      *
      * @return A string containing the shortened file path and line number, separated by a colon.
      */
-    fun toInfoString(): String = "${shortPath()}:${line}"
+    fun toInfoString(): String = "${shortPath(1)}:${line}:$lineOffset"
+
+    fun toShortString(): String = "${line}:$lineOffset"
 }
 
+
+/* ----------------------------------------------------------------------- */
 
 /**
  * Utility object containing methods for processing and working with GdExpr expressions.
  */
 object PsiGdExprUtil {
+
+    var lock: Boolean = false
+    var lock2: Boolean = false
+
+
     /**
-     * Determines the return type of a given GdExpr.
+     * Determines the return type of given GdExpr.
      *
      * @param expr the GdExpr whose return type needs to be determined
      * @return the return type of the provided expression as a string
@@ -136,39 +226,8 @@ object PsiGdExprUtil {
     }
 
 
-//    /**
-//     * Determines the return-type of a given GdExpr expression and optionally considers resource types.
-//     *
-//     * @param expr The expression whose return type is to be determined.
-//     * @param allowResource If true, resource types are considered when computing the return type. Default is false.
-//     * @return The return type as a string. Returns an empty string if the type cannot be determined or the project is in dumb mode.
-//     */
-//    fun getReturnType(expr: GdExpr, allowResource: Boolean = false): String {
-//        if (DumbService.isDumb(expr.project)) {
-//            return ""
-//        }
-//
-//        val ret = getReturnType2(expr, allowResource).trim()
-//
-//        val s = ret.ifEmpty { "<empty>" }
-//        var exprText = GdCommonUtil.getFilteredText(expr, 40, "'", 45)
-//
-//        val javaClass = "class=<${expr.javaClass.simpleName}>".padEnd(35, ' ')
-//
-//        exprText += javaClass
-//
-//        val location = SourceLocation.from(expr)
-//
-//        exprText += "[${location.toInfoString()}]".padEnd(45, ' ')
-//        val resPrefix = getResolvedCountFmt()
-//
-//        //! thisLogger().info("$resPrefix 🔍 * getReturnType of $exprText -> '$s'")
-//
-//        return ret
-//    }
-
     /**
-     * Determines the return type of a given expression.
+     * Determines the return type of given expression.
      *
      * @param expr The expression for which the return type is to be determined.
      * @param allowResource Optional parameter indicating whether resource resolution is allowed.
@@ -185,20 +244,18 @@ object PsiGdExprUtil {
                 val r = when (expr) {
                     is GdFuncDeclEx -> GdKeywords.CALLABLE
                     is GdPlusMinusEx -> expr.expr.returnType
-                    is GdCastEx -> fromTyped(expr.typedVal)
+                    is GdCastEx -> extractSubtype(expr.typedVal)
 
                     is GdTernaryEx -> {
                         val a = expr.exprList.getOrNull(0)?.returnType ?: ""
                         val b = expr.exprList.getOrNull(2)?.returnType ?: ""
 
-                        return if (a == b) a else ""
+                        return if (a == b) a else GdKeywords.VARIANT
                     }
 
-                    is GdLogicEx -> GdKeywords.BOOL
-                    is GdNegateEx -> GdKeywords.BOOL
-                    is GdInEx -> GdKeywords.BOOL
-                    is GdShiftEx -> GdKeywords.INT
-                    is GdBitAndEx -> GdKeywords.INT
+                    is GdLogicEx, is GdNegateEx, is GdInEx -> GdKeywords.BOOL
+                    is GdShiftEx, is GdBitAndEx -> GdKeywords.INT
+
                     is GdComparisonEx -> GdOperand.getReturnType(
                         expr.exprList.left(), expr.exprList.right(), expr.operator.text, expr.project,
                     )
@@ -222,19 +279,24 @@ object PsiGdExprUtil {
 
                             // In case method is not resolved returnType is method itself
                             if (declaration is GdMethodDeclTl && expr.refId?.nextLeaf()?.elementType == GdTypes.DOT) {
-                                return "Callable"
+                                return GdKeywords.CALLABLE
                             }
 
                             val returnType = GdCommonUtil.returnType(declaration)
 
-                            // If declaration was not found (null) but we have a qualifier expression,
-                            // try to infer the member type from the qualifier's type
+                            // If declaration was not found (null), first try dictionary-path resolution.
+                            // This is needed for expressions like `file.visuals.resource_packs` where
+                            // intermediate keys are stored in a predefined dictionary PSI structure.
                             if (returnType.isEmpty() && declaration == null) {
+                                val dictElement = resolveDictPathElement(expr)
+                                val dictType = inferTypeFromPsi(dictElement)
+                                if (dictType.isNotEmpty()) {
+                                    return dictType
+                                }
+
                                 val qualifierType = expr.expr.returnType
                                 if (qualifierType.isNotEmpty()) {
-                                    //         println("   → Trying fallback with qualifierType: '$qualifierType'")
-                                    // Look up the member in the qualifier's class
-                                    val qualifierClass = GdClassUtil.getClassIdElement(qualifierType, expr)
+                                    val qualifierClass = GdClassUtil.getClassIdElement(qualifierType, expr, expr.project)
                                     if (qualifierClass != null) {
                                         val memberName = expr.refId?.text
                                         if (memberName != null) {
@@ -275,7 +337,7 @@ object PsiGdExprUtil {
                         run {
                             val callee = expr.expr
                             val lastId = PsiTreeUtil.getChildrenOfType(callee, GdRefIdRef::class.java)?.lastOrNull()?.text
-                            if (lastId == "new") {
+                            if (lastId == GdKeywords.NEW) {
                                 // Qualified constructor call: the class is the qualifier of the attribute
                                 if (callee is GdAttributeEx) {
                                     // Try to resolve the attribute's reference to a class and return its full class id
@@ -283,35 +345,38 @@ object PsiGdExprUtil {
                                         is GdClassDeclTl -> return GdClassUtil.getFullClassId(resolved)
                                         is GdClassNaming -> return GdClassUtil.getFullClassId(resolved)
                                     }
+
                                     return GdCommonUtil.returnType(callee.firstChild)
                                 }
                                 // Unqualified new(): take the attribute parent if any
                                 val parentAttr = PsiTreeUtil.getParentOfType(expr, GdAttributeEx::class.java)
                                 parentAttr?.let { return GdCommonUtil.returnType(it.firstChild) }
+
                                 return ""
                             }
                         }
 
                         run {
                             val method = expr.expr.text
-                            if ((method == "get_node") || (method == "get_node_or_null") || (method == "get_first_node_in_group")) {
-                                //TODO try to parse Node from .tscn
+                            if ((method == GdKeywords.METHOD_GET_NODE) || (method == GdKeywords.METHOD_GET_NODE_OR_NULL) || (method == GdKeywords.METHOD_GET_FIRST_NODE_IN_GROUP)) {
+                                //TODO: try to parse Node from .tscn
                                 return expr.expr.returnType
-                            } else if (method == "get_nodes_in_group") {
-                                return "Array[Variant]"
-                            } else if (method == "instantiate") {
+                            } else if (method == GdKeywords.METHOD_GET_NODES_IN_GROUP) {
+                                return GdKeywords.ARRAY_OF_VARIANT
+                            } else if (method == GdKeywords.METHOD_INSTANTIATE) {
                                 return GdKeywords.VARIANT
-                            } else if (method == "get_child") {
-                                return "Node"
-                            } else if (method == "get_parent") {
-                                //TODO try to parse Node from .tscn
-                                return "Node"
+                            } else if (method == GdKeywords.METHOD_GET_CHILD) {
+                                return GdKeywords.CLASS_NODE
+                            } else if (method == GdKeywords.METHOD_GET_PARENT) {
+                                //TODO: try to parse Node from .tscn
+                                return GdKeywords.CLASS_NODE
                             } else {
-                                if ((method == "load") || (method == "preload")) {
+                                if ((method == GdKeywords.LOAD) || (method == GdKeywords.PRELOAD)) {
+
                                     val res = expr.argList?.argExprList?.firstOrNull()
                                     if (res != null) {
                                         var resource = res.text.trim('"', '\'')
-                                        if (!resource.startsWith("res://") && (expr.containingFile.originalFile.virtualFile?.parent != null)) {
+                                        if (!resource.startsWith(GdKeywords.RESOURCE_PREFIX) && (expr.containingFile.originalFile.virtualFile?.parent != null)) {
                                             resource = resource.toAbsoluteResource(expr, expr.project)
                                         }
 
@@ -338,14 +403,20 @@ object PsiGdExprUtil {
                     is GdArrEx -> {
                         val exprType = expr.exprList.firstOrNull()?.returnType ?: return GdKeywords.VARIANT
                         if (exprType.startsWith("Array[") || exprType.startsWith("Dictionary["))
-                            return fromTyped(exprType)
+                            return extractSubtype(exprType)
                         return GdOperand.getReturnType(exprType, GdKeywords.INT, "[]", expr.project)
                     }
 
                     is GdPrimaryEx -> {
                         when (expr.firstChild) {
+
+                            /* --- ---------------------------------------------------------------------------------*/
+                            /* --- ---------------------------------------------------------------------------------*/
+
                             is GdNodePath -> {
+
                                 if (expr.firstChild.text.contains(':')) return GdKeywords.VARIANT
+
                                 val node = GdNodeUtil.findNode(expr.firstChild as GdNodePath) ?: return GdKeywords.VARIANT
 
                                 node.script?.let { str ->
@@ -359,6 +430,9 @@ object PsiGdExprUtil {
 
                                 return node.element.type
                             }
+
+                            /* --- ---------------------------------------------------------------------------------*/
+                            /* --- ---------------------------------------------------------------------------------*/
 
                             is GdDictDecl -> {
                                 return "Dictionary[Variant, Variant]"
@@ -386,7 +460,7 @@ object PsiGdExprUtil {
                             }
 
                             else -> {
-                                expr.expr?.returnType ?: ""
+                                expr.expr?.returnType ?: GdKeywords.VARIANT
                             }
                         }
                     }
@@ -447,7 +521,18 @@ object PsiGdExprUtil {
                                 }
 
                                 val named: GdRefIdRef = expr.refIdNm ?: return ""
-                                return when (val element = GdClassMemberUtil.findDeclaration(named)) {
+                                val resolved = GdClassMemberUtil.findDeclaration(named)
+
+                                if (resolved == null) {
+                                    val dictContext = PsiTreeUtil.getParentOfType(named, GdAttributeEx::class.java, false) ?: named
+                                    val dictElement = resolveDictPathElement(dictContext)
+                                    val dictType = inferTypeFromPsi(dictElement)
+                                    if (dictType.isNotEmpty()) {
+                                        return dictType
+                                    }
+                                }
+
+                                return when (val element = resolved) {
                                     is GdClassVarDeclTl -> parseLoadedType(expr, element.returnType)
                                     is GdVarDeclSt -> parseLoadedType(expr, element.returnType)
                                     is GdConstDeclTl -> parseLoadedType(expr, element.returnType)
@@ -456,11 +541,11 @@ object PsiGdExprUtil {
                                     is GdMethodDeclTl -> {
                                         if (PsiTreeUtil.nextVisibleLeaf(expr)?.elementType == GdTypes.LRBR)
                                             parseLoadedType(expr, element.returnType)
-                                        else "Callable"
+                                        else GdKeywords.CALLABLE
                                     }
 
                                     is GdParam -> parseLoadedType(expr, element.returnType)
-                                    is GdSignalDeclTl -> "Signal"
+                                    is GdSignalDeclTl -> GdKeywords.SIGNAL
 
                                     is GdEnumDeclTl -> {
                                         // Delegate to GdCommonUtil for consistency
@@ -475,11 +560,11 @@ object PsiGdExprUtil {
 
                                     is GdForSt -> {
                                         if (element.typed != null) {
-                                            return fromTyped(element.typed)
+                                            return extractSubtype(element.typed)
                                         }
 
                                         val forExpr = element.expr?.returnType ?: ""
-                                        return if (forExpr.startsWith("Array")) {
+                                        if (forExpr.startsWith(GdKeywords.ARRAY)) {
                                             GdOperand.getReturnType(forExpr, GdKeywords.INT, "[]", expr.project)
                                         } else {
                                             forExpr
@@ -524,8 +609,8 @@ object PsiGdExprUtil {
         val files = GdFileResIndex.getFiles(resourcePath, project)
         val file = files.firstOrNull() ?: return null
 
-        // for .tres file: do parse Resource-Definition
-        if (resourcePath.endsWith(".tres")) {
+        // for *.tres resource file: do parse Resource-Definition
+        if (GdKeywords.isResourceFileName(resourcePath)) {
             val content = file.readText()
             // search for [resource] or [ext_resource] sections
             // and extract the type from the first line
@@ -533,13 +618,13 @@ object PsiGdExprUtil {
             return typeMatch?.groupValues?.get(1)
         }
 
-        // handle ".tscn" file
-        if (resourcePath.endsWith(".tscn")) {
-            return "PackedScene"
+        // handle *.tscn scene file
+        if (GdKeywords.isSceneFileName(resourcePath)) {
+            return GdKeywords.PACKED_SCENE
         }
 
         // handle gd script files
-        if (resourcePath.endsWith(".gd")) {
+        if (GdKeywords.isGDScriptFileName(resourcePath)) {
             // resolve class_name
             val gdFile = file.getPsiFile(project) as? GdFile
             return gdFile?.let { GdClassUtil.getFullClassId(it) } ?: resourcePath
@@ -550,20 +635,7 @@ object PsiGdExprUtil {
 
 
     /**
-     * Converts a `GdTyped` object into a `String` representation by retrieving and formatting its text.
-     * Removes leading and trailing colon or space characters from the text. Returns an empty string
-     * if the input is null.
-     *
-     * @param typed The `GdTyped` object to convert, which may be null.
-     * @return The formatted text from the `GdTyped` object as a `String`, or an empty string if `typed` is null.
-     */
-// TODO unify with doc builder
-    fun fromTyped(typed: GdTyped?): String {
-        return typed?.text?.trim(':', ' ') ?: ""
-    }
-
-    /**
-     * Determines and returns the return type of a given PsiElement or its parent class's return type
+     * Determines and returns the return type of given PsiElement or its parent class's return type
      * based on specific conditions involving the PSI tree structure.
      *
      * @param element The PsiElement for which the return type needs to be resolved.
@@ -573,21 +645,20 @@ object PsiGdExprUtil {
      * Returns null if the conditions to resolve the return type are not met.
      */
     fun getAttrOrCallParentClass(element: PsiElement): String? {
-        if (element is GdRefIdRef
-            && element.parent != null
-            && element.parent is GdLiteralEx
-        ) {
+        if ((element is GdRefIdRef) && (element.parent != null) && (element.parent is GdLiteralEx)) {
             val root = element.parent.parent ?: return null
-            if (root is GdAttributeEx && element.parent.prevSibling != null) {
+            if ((root is GdAttributeEx) && (element.parent.prevSibling != null)) {
                 return GdCommonUtil.returnType(root.firstChild)
             }
-            if (root is GdCallEx && root.prevSibling != null && root.parent is GdAttributeEx) {
+
+            if ((root is GdCallEx) && (root.prevSibling != null) && (root.parent is GdAttributeEx)) {
                 return GdCommonUtil.returnType(root.parent.firstChild)
             }
         }
 
         return null
     }
+
 
     /**
      * Resolves a PsiFile from a given PsiElement by determining its associated class and
@@ -599,15 +670,58 @@ object PsiGdExprUtil {
      */
     fun getAttrOrCallParentFile(element: PsiElement): PsiFile? {
         var className = getAttrOrCallParentClass(element) ?: return null
-        if (className.startsWith("Array")) {
-            className = "Array"
-        } else if (className.startsWith("Dictionary")) {
-            className = "Dictionary"
+        if (className.startsWith(GdKeywords.ARRAY)) {
+            className = GdKeywords.ARRAY
+        } else if (className.startsWith(GdKeywords.DICTIONARY)) {
+            className = GdKeywords.DICTIONARY
         }
 
         return GdClassNamingIndex.INSTANCE.get(className, element.project, GlobalSearchScope.allScope(element.project))
             .firstOrNull()?.containingFile
     }
+
+
+    /**
+     * Converts a `GdTyped` object into a `String` representation by retrieving and formatting its text.
+     * Removes leading and trailing colon or space characters from the text. Returns an empty string
+     * if the input is null.
+     *
+     * @param typed The `GdTyped` object to convert, which may be null.
+     * @return The formatted text from the `GdTyped` object as a `String`, or an empty string if `typed` is null.
+     */
+    // TODO unify with doc builder
+    fun extractSubtype(typed: GdTyped?): String {
+//        if (typed == null) return ""
+//
+//        val returnsType = typed.typedVal.returnType
+//        val typeHintList = typed.typedVal.typeHintList.joinToString(", ", "[", "]")
+//        val sourceLoc = SourceLocation.from(typed)
+//        val prefix =
+//            Ansi.BRIGHT_BLACK + "[" +
+//                typed.objToHexString() + "/" +
+//                currentThreadId().toHexString("<", "h>", uppercase = false) +
+//                "]" + Ansi.RESET
+//
+//        val underWaved: String =
+//            " ".repeat(sourceLoc.lineOffset) + Ansi.BRIGHT_RED +
+//                "~".repeat(typed.text.length) + Ansi.RESET
+//
+//        while (lock2) Thread.sleep(1)
+//
+//        lock2 = true
+//        println("$prefix ------------------------------------------------------------------")
+//        println("$prefix element type   : ${typed.javaClass.simpleName}")
+//        println("$prefix return type    : $returnsType")
+//        println("$prefix type-hint list : $typeHintList")
+//        println("$prefix element text   : '${typed.text.symbolizeWS()}'")
+//        println("$prefix line number    : ${sourceLoc.toInfoString()}")
+//        println("$prefix line text      : '${sourceLoc.lineText.symbolizeWS()}'")
+//        println("$prefix                   $underWaved \n")
+//        lock2 = false
+
+        return typed?.text?.trim(':', ' ') ?: ""
+    }
+
 
     /**
      * Parses and extracts a type name from a given typed string based on specific rules.
@@ -619,18 +733,19 @@ object PsiGdExprUtil {
      * @return The extracted inner type as a string if applicable; otherwise,
      *         returns a default value (`GdKeywords.VARIANT`).
      */
-    private fun fromTyped(typed: String): String {
-        if (typed.startsWith("Array")) {
-            return typed.substring(5).trim('[', ']')
+    private fun extractSubtype(typed: String): String {
+        if (typed.startsWith(GdKeywords.ARRAY)) {
+            return typed.substring(GdKeywords.ARRAY.length).trim('[', ']')
         }
 
-        if (typed.startsWith("Dictionary")) {
-            val inside = typed.substring(10).trim('[', ']')
-            return inside.split(",").map { it.trim() }.last()
+        if (typed.startsWith(GdKeywords.DICTIONARY)) {
+            val inside = typed.substring(GdKeywords.DICTIONARY.length).trim('[', ']')
+            return inside.split(",").asSequence().map { it.trim() }.last()
         }
 
         return GdKeywords.VARIANT
     }
+
 
     /**
      * Extracts the main type or array element type from the given `GdTypedVal` object.
@@ -640,16 +755,337 @@ object PsiGdExprUtil {
      * @param typed The `GdTypedVal` instance containing type information. Can be nullable.
      * @return A string representing the primary type or the array's element type. Returns an empty string if `typed` is null.
      */
-    fun fromTyped(typed: GdTypedVal?): String {
+    fun extractSubtype(typed: GdTypedVal?): String {
         if (typed == null) return ""
 
         val main = typed.typeHintList.first().text
-        if (main != "Array") {
+        if (main != GdKeywords.ARRAY) {
             return main
         }
 
         return typed.typeHintList.last().text
     }
+
+
+    /**
+     * 
+     */
+    fun listChildren2(
+        element: PsiElement,
+        markElement: PsiElement = element,
+        filter: String = "",
+        maxElements: Int = 999,
+        maxLevel: Int = 15,
+        indent: String = "  ",
+        whiteList: List<PsiElement> = emptyList(),
+        backList: List<PsiElement> = emptyList()
+    ): List<PsiElement> {
+
+        val maxLines: Int = 4096
+        var i = 0
+        val t0 = System.nanoTime()
+        var tRun = System.nanoTime()
+
+        val rules = mapOf(
+            //"""Global(.gd)?""".toRegex() to (Ansi.YELLOW + Ansi.BOLD),
+            """0+[xX][a-fA-F0-9]+""".toRegex() to Ansi.CYAN,
+            "#\\d+".toRegex() to Ansi.BRIGHT_WHITE,
+            "[$%][a-zA-Z0-9_./-]+".toRegex() to Ansi.GREEN,
+            """[a-zA-Z0-9_]+\.gd""".toRegex() to Ansi.YELLOW + Ansi.ITALIC,
+
+            """([«»|?])""".toRegex() to Ansi.BRIGHT_RED + Ansi.BOLD,
+            """([•;])""".toRegex() to Ansi.BRIGHT_BLACK,
+            """([()⟨⟩])""".toRegex() to Ansi.CYAN,
+            """[⮕⬅]""".toRegex() to Ansi.BRIGHT_RED + Ansi.BOLD,
+            """([\[\]])""".toRegex() to Ansi.CYAN,
+            """[↵·⇥…]""".toRegex() to Ansi.BRIGHT_BLUE + Ansi.BOLD,
+
+            "==>".toRegex() to Ansi.RED_BOLD,
+            "Error".toRegex() to Ansi.RED_BOLD,
+            "\\s+⟶".toRegex() to (Ansi.WHITE + Ansi.BOLD),
+            Regex("\"([^\"]+)\"(?=\\s*)") to (Ansi.CYAN + Ansi.BOLD),
+
+            """\bString\b""".toRegex() to (Ansi.CYAN + Ansi.BOLD),
+            """\bres://.+\b""".toRegex() to (Ansi.CYAN + Ansi.BOLD),
+            """\bnull\b""".toRegex() to (Ansi.BRIGHT_RED + Ansi.BOLD + Ansi.ITALIC),
+            """\bint\b""".toRegex() to (Ansi.BLUE + Ansi.BOLD),
+            """\bvoid\b""".toRegex() to (Ansi.BRIGHT_RED + Ansi.BOLD),
+            """\bArray""".toRegex() to (Ansi.CYAN + Ansi.BOLD),
+            """\bDictionary\b""".toRegex() to (Ansi.CYAN + Ansi.BOLD),
+            """\bVariant\b""".toRegex() to (Ansi.BRIGHT_RED + Ansi.BOLD),
+            """\breturn\b""".toRegex() to (Ansi.BRIGHT_RED + Ansi.ITALIC),
+
+            """([└╰├─│])""".toRegex() to (Ansi.BRIGHT_BLACK + Ansi.BOLD),
+            """([₀-₉⁰-⁹])""".toRegex() to (Ansi.BRIGHT_WHITE),
+
+            """GdKeyValueImpl""".toRegex() to (Ansi.BRIGHT_BLUE + Ansi.BOLD),
+            """GdLiteralExImpl""".toRegex() to (Ansi.BRIGHT_GREEN + Ansi.BOLD),
+            """GdStringValRefImpl""".toRegex() to (Ansi.BRIGHT_GREEN + Ansi.BOLD),
+            """GdPrimaryExImpl""".toRegex() to (Ansi.BRIGHT_RED + Ansi.BOLD),
+            """GdDictDeclImpl""".toRegex() to (Ansi.BRIGHT_YELLOW + Ansi.BOLD),
+            """GdArrayDeclImpl""".toRegex() to (Ansi.BRIGHT_MAGENTA + Ansi.BOLD),
+            """GdFile""".toRegex() to (Ansi.BRIGHT_RED + Ansi.BOLD + Ansi.ITALIC),
+
+            """resolveClassVarDeclaration""".toRegex() to (Ansi.BRIGHT_CYAN + Ansi.BOLD + Ansi.ITALIC),
+            """resolveDictionary""".toRegex() to (Ansi.BRIGHT_WHITE + Ansi.BOLD + Ansi.ITALIC),
+            """findDeclaration""".toRegex() to (Ansi.BRIGHT_WHITE + Ansi.BOLD + Ansi.ITALIC),
+            """calledUpon""".toRegex() to (Ansi.BRIGHT_WHITE + Ansi.BOLD + Ansi.ITALIC),
+
+            """text=""".toRegex() to (Ansi.BRIGHT_BLUE + Ansi.BOLD + Ansi.ITALIC),
+            """expr=""".toRegex() to (Ansi.BRIGHT_BLUE + Ansi.BOLD + Ansi.ITALIC),
+            """exprType=""".toRegex() to (Ansi.BRIGHT_BLUE + Ansi.BOLD + Ansi.ITALIC),
+            """name=""".toRegex() to (Ansi.BRIGHT_BLUE + Ansi.BOLD + Ansi.ITALIC),
+            """file=""".toRegex() to (Ansi.BRIGHT_BLUE + Ansi.BOLD + Ansi.ITALIC),
+
+            """(GdAttributeExImpl|GdRefIdRefImpl|ROM_PACK_NAME)""".toRegex() to (Ansi.BRIGHT_BLUE + Ansi.BOLD),
+        )
+
+        val highlightRules = mapOf(
+            """-> Dictionary""".toRegex() to (Ansi.BG_CYAN),
+        )
+
+        val whiteTypes: Set<Class<out PsiElement>> = whiteList.asSequence().map { it.javaClass }.toSet()
+        val blackTypes: Set<Class<out PsiElement>> = backList.asSequence().map { it.javaClass }.toSet()
+
+        fun allowed(e: PsiElement): Boolean {
+            val cls = e.javaClass
+            if (whiteTypes.isNotEmpty() && whiteTypes.none { it.isAssignableFrom(cls) }) return false
+            if (blackTypes.isNotEmpty() && blackTypes.any { it.isAssignableFrom(cls) }) return false
+            return !(!filter.isEmpty() && e.text.contains(filter))
+        }
+
+        fun typeName(e: PsiElement): String {
+            var s = e.javaClass.simpleName.ifBlank { e.javaClass.name.substringAfterLast('.') }
+
+            if (e is GdExpr) s = "!$s"
+
+            if (e.children.size > 0)
+                s += "(${e.children.size})"
+
+            if ((e is GdExpr) /*&& !e.children.isEmpty()*/) {
+                val types = e.getReturnType().limit(45)
+
+                if (!types.isEmpty())
+                    s += " -> $types"
+            }
+
+
+            return s
+        }
+
+        fun truncText(s: String): String {
+            val t = s
+                .replace("\r\n", "↵")
+                .replace('\r', '·')
+                .replace('\n', '↵')
+                .replace('\t', '⇥')
+                .replace(' ', '·')
+                .replace(Regex("\\s+"), "#")
+                .trim()
+            return t
+        }
+
+        fun truncText(e: PsiElement, max: Int = 150): String {
+            val t = truncText((e.text ?: "<EMPTY>")).trim()
+            return if (t.length <= max) "«$t»" else "«" + t.take(max - 1) + "…»"
+        }
+
+
+        val out = ArrayList<PsiElement>(1024)
+
+        fun printNode(e: PsiElement, prefix: String, isLast: Boolean, size: Int, index: Int, level: Int) {
+            if (level > maxLevel) return
+
+            val t = System.nanoTime() - tRun
+            tRun = System.nanoTime()
+
+            val sourceLoc = SourceLocation.from(e)
+            val tRunStr = "%6.2fms".format(t.toDouble() / 10e5)
+            val isMarked = e == markElement
+
+            val children = e.children
+            val s = if (size == 1) "└" else "╰"
+            val connector = (if (isLast) "${s}─" else "├─")
+            val padSize = if (size > 9) 4 else 2
+
+
+            val line = buildString {
+                append(prefix)
+                append(connector)
+                append(index.toString().toSubscriptNumbers().padEnd(padSize, '─'))
+                var pad = ((((100 - prefix.length) + indent.length) - padSize))
+                if (pad < 0) pad = 0
+
+                if (index > maxElements || (i > maxLines)) {
+                    append("...".padEnd(pad))
+                } else {
+                    append((typeName(e)).padEnd(pad))
+                    append("⟶ ${truncText(e)}".limitPad(60))
+                    append("line:")
+                    append(sourceLoc.line.toString().limitPad(4, removeWs = false, doRight = true))
+
+                    val calledUpon = GdClassMemberUtil.calledUpon(e).toString().limitPad(40)
+                    val declr = GdClassMemberUtil.findDeclaration(e).toString().limitPad(40)
+
+                    val x = when (element) {
+                        is GdExpr -> element.returnType
+                        else -> ""
+                    }
+
+                    val dic = resolveDictionary(e).toString().limitPad(20)
+                    val vvar = resolveVarDeclaration(e)
+                    val cvar = resolveClassVarDeclaration(e)
+
+                    append(" calledUpon($calledUpon)")
+                    append(" findDeclaration($declr)")
+
+                    if (x.isNotEmpty()) {
+                        append(" returnType($x)")
+                    }
+
+                    if (dic.isNotEmpty()) {
+                        append(" resolveDictionary($dic)")
+                    }
+
+
+                    if (vvar != null) {
+                        val ex = vvar.expr?.toString() ?: ""
+                        val fname = vvar.containingFile.name
+                        append(
+                            " resolveVarDeclaration(file=${fname.limitPad(20)} name=«${vvar.name.limitPad(15)}» | text=${truncText(vvar).limitPad(40)} | expr=${
+                                truncText(ex).limitPad(45)
+                            } | exprType=«${vvar.expr?.returnType?.limitPad(20)}»)"
+                        )
+                    }
+
+
+                    if (cvar != null) {
+                        val ex = cvar.expr?.toString() ?: ""
+                        val fname = cvar.containingFile.name
+                        append(
+                            " resolveClassVarDeclaration(file=${fname.limitPad(20)} name=«${cvar.name.limitPad(15)}» | text=${truncText(cvar).limitPad(40)} | expr=${truncText(ex).limitPad(45)} | exprType=«${
+                                cvar.expr?.returnType?.limitPad(20)
+                            }»)"
+                        )
+                    }
+                }
+            }
+
+            if (allowed(e)) {
+                var bg = if (isMarked) Ansi.BRIGHT_BG_BLACK else ""
+
+                for (entry in highlightRules) {
+                    if (line.contains(entry.key)) bg = entry.value
+                }
+
+                val tNum = t.toDouble() / 10e5
+
+                var color = Ansi.BRIGHT_BLACK
+                if (tNum >= 10) color = Ansi.WHITE
+                if (tNum >= 40) color = Ansi.BRIGHT_YELLOW
+                if (tNum >= 100) color = Ansi.YELLOW
+                if (tNum >= 130) color = Ansi.BRIGHT_RED
+                if (tNum >= 180) color = Ansi.RED
+                if (tNum >= 299) color = Ansi.BRIGHT_MAGENTA
+
+                val tRunStr = "${color}${tRunStr.limitPad(8, false, true)}${bg}"
+
+                val hexPrefix = AnsiHelper.colorizeByPatterns(e.objToHexString().padEnd(10), rules, bg)
+                val lineNr = AnsiHelper.colorizeByPatterns("#${(++i)}".limitPad(4, removeWs = false, doRight = true), rules, bg)
+                val lineIndicator = Ansi.BRIGHT_RED + bg + (if (isMarked) "==>" else "   ") + bg
+
+
+                println("$bg $lineNr $hexPrefix $tRunStr $lineIndicator ${AnsiHelper.colorizeByPatterns(line, rules, bg)} ${Ansi.RESET}")
+                out.add(e)
+            }
+
+            if (index > maxElements || i > maxLines) return
+
+            val nextPrefix =
+                prefix +
+                    if (isLast) indent
+                    else "│$indent"
+
+            for (j in children.indices) {
+                if (j <= maxElements && i < maxLines) printNode(children[j], nextPrefix, j == children.lastIndex, children.size, j + 1, level + 1)
+            }
+        }
+
+        val rootChildren = element.children
+        val rootLine = "${typeName(element).trim()} file=" + element.containingFile.originalFile.virtualFile.name.trim()
+        if (allowed(element)) {
+            val hexPrefix = AnsiHelper.colorizeByPatterns(element.objToHexString().padEnd(10), rules)
+            val lineNr = AnsiHelper.colorizeByPatterns("#${(++i)}".limitPad(4, removeWs = false, doRight = true), rules)
+            val lineIndicator = "   "
+
+            println("$lineNr $hexPrefix ${"-".limitPad(8, false, true)} $lineIndicator ${AnsiHelper.colorizeByPatterns(rootLine, rules)}")
+            out.add(element)
+        }
+
+        for (j in rootChildren.indices) {
+            if (j <= maxElements && i < maxLines) printNode(rootChildren[j], indent, j == rootChildren.lastIndex, rootChildren.size, j + 1, 0)
+        }
+
+        println(Ansi.BRIGHT_WHITE + "")
+        val time = (System.nanoTime() - t0) / 1_000_000_000.0
+        if (time <= 60) {
+            val timeStr = "%.4f".format(time)
+            println("Total duration: ${timeStr}s")
+        } else {
+            val timeStr = "%.4f".format(time / 60)
+            println("Total duration: ${timeStr}m")
+        }
+        print(Ansi.RESET)
+
+        return out
+    }
+
+
+    /**
+     * Returns the current thread's stacktrace as a compact, readable String.
+     * Typical use: log(stackTraceHere()) to see who called the current code path.
+     */
+    @OptIn(ExperimentalStdlibApi::class)
+    fun stackTraceHere(
+        filter: String = "",
+        maxFrames: Int = 64,
+        skipFrames: Int = 0,
+        includeThreadHeader: Boolean = true
+    ): String {
+        val st = Thread.currentThread().stackTrace
+        // Usually: 0=getStackTrace, 1=stackTraceHere, then callers...
+        val baseSkip = 2 + skipFrames
+        val from = baseSkip.coerceAtMost(st.size)
+        val to = (from + maxFrames).coerceAtMost(st.size)
+
+        val sb = StringBuilder(2048)
+        if (includeThreadHeader) {
+            val t = Thread.currentThread()
+            sb.append("--- <${currentThreadId().toString().padEnd(5)}> 0x${this.hashCode().toHexString()} Thread=\"").append(t.name)
+                .append(" state=").append(t.state).append('\n')
+        }
+        for (i in from until to) {
+            val e = st[i]
+            val tmp = StringBuffer()
+
+            tmp.append("\t\t <${currentThreadId().toString().padEnd(5)}> 0x${this.hashCode().toHexString()} \t")
+                .append("at ")
+                .append(e.className).append('.').append(e.methodName)
+                .append('(').append(e.fileName ?: "Unknown Source")
+                .append(':').append(e.lineNumber).append(')')
+                .append('\n')
+
+
+            if (filter.isEmpty()) sb.append(tmp)
+
+            if (!filter.trim().isEmpty() && tmp.toString().contains(filter)) {
+                sb.append(tmp)
+            }
+        }
+
+        return sb.toString()
+    }
+
 
     /**
      * Parses the given type from the provided PSI element and attempts to resolve a more specific type
@@ -672,6 +1108,263 @@ object PsiGdExprUtil {
             ?.let { (it as? PsiElement)?.let { it1 -> return GdCommonUtil.returnType(it1) } }
 
         return type
+    }
+
+
+    /**
+     * Looks for an instance of [GdClassVarDeclTlImpl] in parent direction.
+     */
+    fun resolveVarDeclaration(element: PsiElement): GdClassVarDeclTlImpl? {
+        return when {
+            element is GdClassVarDeclTlImpl -> element
+            element.parent != null -> resolveVarDeclaration(element.parent)
+            else -> null
+        }
+    }
+
+    fun resolveClassVarDeclaration(element: PsiElement): GdClassVarDeclTl? {
+        for (e in element.children) {
+            if (e is GdRefIdRef) {
+                val res = GdClassMemberUtil.findDeclaration(e)?.psi()
+                if ((res is GdClassVarDeclTl) && (res.varNmi != null)) {
+                    return res
+                }
+            }
+
+            val res = resolveClassVarDeclaration(e)
+            if (res != null) return res
+        }
+
+        return null
+    }
+
+    fun resolveDictDecl(element: PsiElement): GdDictDeclImpl? {
+        for (e in element.children) {
+            if (e is GdRefIdRef) {
+                val res = GdClassMemberUtil.findDeclaration(e)?.psi()
+                if ((res is GdClassVarDeclTl) && (res.varNmi != null)) {
+                    val expr = res.expr?.psi()
+                    if ((expr != null) && (expr.firstChild is GdDictDeclImpl)) {
+                        return expr.firstChild as GdDictDeclImpl
+                    }
+                }
+            }
+
+            val res = resolveDictDecl(e) ?: continue
+            return res
+        }
+
+        return null
+    }
+
+
+    fun treeContainsDictionary(element: PsiElement): Boolean {
+        for (psiElement in element.children) {
+            if (psiElement is GdExpr) {
+                val ret = psiElement.returnType
+                if (ret.startsWith(GdKeywords.DICTIONARY)) return true
+            }
+
+            if (psiElement.children.size > 0)
+                if (treeContainsDictionary(psiElement)) return true
+        }
+
+        return false
+    }
+
+    fun treeFindDictionary(element: PsiElement): GdExpr? {
+        for (psiElement in element.children) {
+            if (psiElement is GdExpr) {
+                val ret = psiElement.returnType
+                if (ret.startsWith(GdKeywords.DICTIONARY)) return psiElement
+            }
+
+            if (psiElement.children.size > 0) {
+                val f = treeFindDictionary(psiElement)
+                if (f != null) return f
+            }
+        }
+
+        return null
+    }
+
+    fun resolvePath(root: Map<String, *>, path: String): Any? {
+        if (path.isEmpty()) return root
+
+        var current: Any? = root
+        var start = 0
+
+        while (start < path.length) {
+            val end = path.indexOf('.', start).let { if (it == -1) path.length else it }
+
+            if (start == end) {
+                // z.B. "aaa..bbb" oder ".aaa"
+                return null
+
+            }
+
+            val key = path.substring(start, end)
+            val map = current as? Map<*, *> ?: return null
+            current = map[key] ?: return null
+
+            start = end + 1
+
+        }
+
+        return current
+    }
+
+    fun resolveDictionary(element: PsiElement): Map<String, Any> {
+        for (e in element.children) {
+            if (e is GdRefIdRef) {
+                val res = GdClassMemberUtil.findDeclaration(e)?.psi()
+                if ((res is GdClassVarDeclTl) && (res.varNmi != null)) {
+                    val expr = res.expr?.psi()
+                    val varName = res.varNmi?.name!!
+
+                    if ((expr != null) && (expr.firstChild is GdDictDeclImpl)) {
+                        val foo = GdPsiDictParser.parse(expr.firstChild as GdDictDeclImpl)
+                        val map1: Map<String, Any> = mapOf(Pair(varName, foo))
+
+                        return map1
+                    }
+                }
+            }
+
+            val res = resolveDictionary(e)
+            if (!res.isEmpty()) return res
+        }
+
+        return emptyMap
+    }
+
+    private fun keyTextOf(entry: GdKeyValueImpl): String {
+        return entry.firstChild.text.removeSurrounding("\"")
+    }
+
+    private fun nestedDictOf(value: PsiElement): GdDictDeclImpl? {
+        return when (value) {
+            is GdDictDeclImpl -> value
+            is GdPrimaryExImpl -> value.children.firstOrNull { it is GdDictDeclImpl } as? GdDictDeclImpl
+            else -> PsiTreeUtil.findChildOfType(value, GdDictDeclImpl::class.java)
+        }
+    }
+
+    private fun inferTypeFromPsi(element: PsiElement?): String {
+        if (element == null) return ""
+
+        return when (element) {
+            is GdExpr -> element.returnType
+            is GdKeyValueImpl -> inferTypeFromPsi(element.children.getOrNull(1))
+            else -> PsiTreeUtil.findChildOfType(element, GdExpr::class.java)?.returnType ?: ""
+        }
+    }
+
+    private fun dictDeclFromDeclaration(declaration: PsiElement?): GdDictDeclImpl? {
+        return when (declaration) {
+            is GdClassVarDeclTl -> declaration.expr?.firstChild as? GdDictDeclImpl
+            is GdClassVarDeclTlImpl -> declaration.expr?.firstChild as? GdDictDeclImpl
+            is GdVarDeclSt -> declaration.expr?.firstChild as? GdDictDeclImpl
+            else -> null
+        }
+    }
+
+    private fun declarationNameOf(declaration: PsiElement?): String? {
+        return when (declaration) {
+            is GdClassVarDeclTl -> declaration.varNmi?.name
+            is GdClassVarDeclTlImpl -> declaration.varNmi?.name
+            is GdVarDeclSt -> declaration.varNmi?.name
+            else -> null
+        }
+    }
+
+
+    /**
+     * Resolves a dotted dictionary path against a PSI dictionary declaration.
+     *
+     * Example:
+     *   {
+     *     "video": {
+     *       "mode": 0
+     *     }
+     *   }
+     *
+     *   path = ["video", "mode"]  -> returns the PSI element of the final value (`0`)
+     *
+     * Rules:
+     * - Each intermediate path segment must resolve to a nested dictionary.
+     * - The last path segment returns the value PSI element of the matching key.
+     * - Invalid or non-dictionary intermediate values return null.
+     */
+    fun resolveDictValue(path: List<String>, dict: GdDictDeclImpl): PsiElement? {
+        if (path.isEmpty()) return null
+
+        var currentDict: GdDictDeclImpl = dict
+        var value: PsiElement? = null
+
+        for (i in path.indices) {
+            val key = path[i]
+            var matchedValue: PsiElement? = null
+
+            for (child in currentDict.children) {
+                val keyValue = child as? GdKeyValueImpl ?: continue
+                if (keyTextOf(keyValue) != key) continue
+
+                matchedValue = keyValue.children.getOrNull(1) ?: return null
+                break
+            }
+
+            val resolvedValue = matchedValue ?: return null
+
+            if (i == path.lastIndex) {
+                return resolvedValue
+            }
+
+            currentDict = nestedDictOf(resolvedValue) ?: return null
+            value = resolvedValue
+        }
+
+        return value
+    }
+
+
+    fun resolveDictPathElement(element: PsiElement): PsiElement? {
+        if (lock) return null
+
+        lock = true
+        try {
+            val context = when (element) {
+                is GdAttributeEx -> element
+                is GdExpr -> element
+                else -> PsiTreeUtil.getParentOfType(element, GdAttributeEx::class.java, false) ?: element
+            }
+
+            val contextText = context.text.trim()
+            if (contextText.isEmpty()) return null
+
+            val segments = contextText.split('.').map { it.trim() }.filter { it.isNotEmpty() }
+            if (segments.isEmpty()) return null
+
+            val baseName = segments.first()
+            if (baseName == GdKeywords.SELF || baseName == GdKeywords.SUPER) return null
+
+            val baseRef = PsiTreeUtil.findChildrenOfType(context, GdRefIdRef::class.java)
+                .firstOrNull { it.text == baseName }
+                ?: return null
+
+            val declaration = GdClassMemberUtil.findDeclaration(baseRef)?.psi() ?: return null
+            val dictDecl = dictDeclFromDeclaration(declaration) ?: return null
+            val declarationName = declarationNameOf(declaration) ?: return null
+
+            val relativePath = if (segments.first() == declarationName) segments.drop(1) else segments
+            if (relativePath.isEmpty()) {
+                return dictDecl
+            }
+
+            return resolveDictValue(relativePath, dictDecl)
+        } finally {
+            lock = false
+        }
     }
 
 }

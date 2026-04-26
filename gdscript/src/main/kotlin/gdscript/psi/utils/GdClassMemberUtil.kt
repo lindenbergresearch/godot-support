@@ -28,11 +28,71 @@ import project.psi.util.ProjectAutoloadUtil
  */
 private val declarationResolutionStack = ThreadLocal.withInitial { mutableSetOf<String>() }
 
+// Neue Utility-Klasse oder Erweiterung in GdClassMemberUtil.kt
+//object GdDictionaryStructureUtil {
+//
+//    fun getDictionaryStructure(dictExpr: GdDictDecl): Map<String, GdExpr> {
+//        val result = mutableMapOf<String, GdExpr>()
+//        // Dictionary-Einträge parsen und Schlüssel-Wert-Paare extrahieren
+//        for (entry in dictExpr.keyValueList) {
+//            val key = entry.?.text?.removeSurrounding("\"") ?: continue
+//            val value = entry.valueExpr ?: continue
+//            result[key] = value
+//        }
+//        return result
+//    }
+//
+//    /**
+//     * Löst verschachtelte Dictionary-Zugriffe auf.
+//     */
+//    fun resolveNestedDictionaryAccess(
+//        baseDeclaration: PsiElement,
+//        accessPath: List<String>
+//    ): GdExpr? {
+//        // Finde das ursprüngliche Dictionary-Literal
+//        val dictExpr = when (baseDeclaration) {
+//            is GdClassVarDeclTl -> baseDeclaration.expr as? GdDictEx
+//            is GdVarDeclSt -> baseDeclaration.expr as? GdDictEx
+//            else -> null
+//        } ?: return null
+//
+//        var currentDict: GdDictEx? = dictExpr
+//        for (key in accessPath.dropLast(1)) {
+//            val structure = getDictionaryStructure(currentDict ?: return null)
+//            currentDict = structure[key] as? GdDictEx
+//        }
+//
+//        return currentDict?.let { getDictionaryStructure(it)[accessPath.last()] }
+//    }
+//}
 
 /**
  * Utility object for handling and resolving class members in GDScript files.
  */
 object GdClassMemberUtil {
+    val absTime = System.nanoTime()
+    var time: Long = 0
+    var count: Long = 0
+    var count2: Long = 0
+
+    fun findDeclarationByName(name: String, project: Project): PsiElement? {
+        // 1. Versuch: über GdClassNamingIndex – sucht nach einer Klasse mit dem Namen
+        val classMatch = GdClassNamingIndex.INSTANCE
+            .getGlobally(name, project)
+            .firstOrNull()
+        if (classMatch != null) return classMatch
+
+        // 2. Versuch: nach Datei mit passendem Namen suchen (z. B. Settings.gd)
+        val gdFiles = FilenameIndex.getFilesByName(project, "$name.gd", GlobalSearchScope.allScope(project))
+        if (gdFiles.isNotEmpty()) {
+            return gdFiles.first()
+        }
+
+        // Optional: versuche auch ohne ".gd" (falls Godot-Dateien ohne Extension im Index sind)
+        val fallback = FilenameIndex.getFilesByName(project, name, GlobalSearchScope.allScope(project))
+        return fallback.firstOrNull()
+    }
+
 
     /**
      * Attempts to find the declaration associated with the given element.
@@ -143,7 +203,7 @@ object GdClassMemberUtil {
             if (isChecked != null) {
                 val isExpr = isChecked.expr.firstChild
                 if (isExpr is GdRefIdRef && isExpr.text == calledOnPsiName) {
-                    calledOn = PsiGdExprUtil.fromTyped(isChecked.typedVal)
+                    calledOn = PsiGdExprUtil.extractSubtype(isChecked.typedVal)
                     isCheckedSuccess = true
                 }
             }
@@ -162,7 +222,7 @@ object GdClassMemberUtil {
                 // do not assume either static or instance context. Resource-based references can represent
                 // unnamed scripts or external files where we cannot reliably infer static-ness from the type
                 // string alone. Setting `static = null` prevents premature filtering of members.
-                if (calledOn.endsWith(".gd")) {
+                if (calledOn.endsWith(GdKeywords.FILE_SUFFIX_GD_SCRIPT)) {
                     static = null
                 }
             }
@@ -210,7 +270,7 @@ object GdClassMemberUtil {
         // Checks locals only when it's not attribute/call expression moving declaration possibly outside
         if (calledOn == null) {
             val locals = listLocalDeclarationsUpward(element, onlyLocalScope, hitLocal)
-            if (searchFor != null && locals.containsKey(searchFor)) return arrayOf(locals[searchFor]!!)
+            if ((searchFor != null) && locals.containsKey(searchFor)) return arrayOf(locals[searchFor]!!)
             result.addAll(locals.values)
 
             // This class is already scanned via localDecl - so move to the extended one
@@ -221,10 +281,10 @@ object GdClassMemberUtil {
             }
         } else {
             // Normalize typed Array[K] to base Array
-            if (calledOn.startsWith("Array[")) calledOn = "Array"
+            if (calledOn.startsWith("${GdKeywords.ARRAY}[")) calledOn = GdKeywords.ARRAY
 
             // Normalize typed Dictionary[K, V] to base Dictionary
-            if (calledOn.startsWith("Dictionary[")) {
+            if (calledOn.startsWith("${GdKeywords.DICTIONARY}[")) {
 
                 val firstChild = PsiTreeUtil.collectElementsOfType(calledOnPsi, GdRefIdRef::class.java).lastOrNull()
                 if (firstChild != null) {
@@ -241,7 +301,7 @@ object GdClassMemberUtil {
                     }
                 }
 
-                calledOn = "Dictionary"
+                calledOn = GdKeywords.DICTIONARY
             }
 
             val enumDecl = if (calledOnPsi is GdAttributeEx) {
@@ -338,10 +398,10 @@ object GdClassMemberUtil {
 
                 val autoLoaded = autoLoads.find { it.key == searchFor }
                 autoLoaded?.let { return arrayOf(it) }
+            } else {
+                result.addAll(GdClassNamingIndex.INSTANCE.getAllValues(project))
+                result.addAll(autoLoads)
             }
-
-            result.addAll(GdClassNamingIndex.INSTANCE.getAllValues(project))
-            result.addAll(autoLoads)
         }
 
         if (searchFor != null) return emptyArray()
@@ -871,7 +931,7 @@ object GdClassMemberUtil {
      * and returns the correct type for hint & validation
      */
     private fun findIsTypeCheck(element: PsiElement): GdIsEx? {
-        // TODO je to dost na hrubo a nekontroluje to negace a pod
+        // TODO It's pretty rough and doesn't check for negatives and such
         return getConditioned(element) { _, stmt ->
             val expr = (stmt as? GdIsEx) ?: PsiTreeUtil.findChildOfType(stmt, GdIsEx::class.java)
             expr?.let { return@getConditioned it }
@@ -885,7 +945,7 @@ object GdClassMemberUtil {
      *  of node[.subnodes].has_method("asd"):
      */
     fun hasMethodCheck(element: PsiElement): Boolean {
-        // TODO je to dost na hrubo a nekontroluje to negace a pod
+        // TODO It's pretty rough and doesn't check for negatives and such
         return getConditioned(element) { el, stmt ->
             val expressions = if (stmt is GdCallEx) listOf(stmt)
             else PsiTreeUtil.findChildrenOfType(stmt, GdCallEx::class.java)
